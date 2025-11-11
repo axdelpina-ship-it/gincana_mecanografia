@@ -6,9 +6,11 @@ import re
 import gspread
 from google.oauth2 import service_account 
 
-# --- CONFIGURACIÓN ESTÁTICA (Para evitar cuota de Google Sheets) ---
+# --- CONFIGURACIÓN ESTÁTICA ---
 
 DURACION_SEGUNDOS = 60 # Tiempo fijo para la prueba de tecleo
+WPM_LIMITE = 80 # Límite para considerar trampa por copiar/pegar
+
 TEXTO_PRUEBA_GINCANA = (
     "La atención al cliente en un Contact Center requiere precisión y velocidad. "
     "La métrica clave es el FCR, First Contact Resolution, que mide la capacidad "
@@ -36,7 +38,7 @@ PREGUNTAS_COMPRENSION = [
     }
 ]
 
-# --- CSS PERSONALIZADO (CLEAN & PROFESIONAL con BARRA LATERAL CLARA) ---
+# --- CSS PERSONALIZADO ---
 st.markdown("""
 <style>
     /* 1. FUENTE GLOBAL */
@@ -95,7 +97,7 @@ st.markdown("""
         white-space: pre-wrap; /* Asegura saltos de línea y buen formato */
     }
     
-    /* Nota: Se eliminó el CSS de restricción de copy/paste ya que se usará JavaScript */
+    /* Nota: Se eliminó todo el código CSS y JavaScript de restricción de copiar/pegar */
 </style>
 """, unsafe_allow_html=True)
 
@@ -147,6 +149,7 @@ def calcular_metrics(texto_original, texto_escrito, tiempo_tecleo_seg, tiempo_le
 
     # Precisión
     if len(original_limpio) > 0 and caracteres_escritos > 0:
+        # Se calcula la precisión en base a la longitud del texto original, no lo que escribió.
         precision_porcentaje = (caracteres_correctos / len(original_limpio)) * 100
         precision_porcentaje = max(0, min(100, precision_porcentaje))
     else:
@@ -175,7 +178,7 @@ def save_typing_results(results_dict):
         row_data = [
             results_dict['Fecha/Hora'],
             results_dict['ID Agente'],
-            results_dict['WPM'],
+            results_dict['WPM'], # Guarda el valor, que es -1 si es trampa
             results_dict['Precisión (%)'],
             results_dict['Errores'],
             results_dict['Duracion Tecleo (s)'],
@@ -205,8 +208,8 @@ def reiniciar_test():
     st.session_state.guardado_exitoso = False
     st.session_state.comprehension_answers = [None] * len(PREGUNTAS_COMPRENSION)
     st.session_state.results = None
-    if 'progress_value' in st.session_state: del st.session_state['progress_value'] # Limpia la distracción
-    st.rerun() # Fuerza el reinicio de la aplicación
+    if 'progress_value' in st.session_state: del st.session_state['progress_value'] 
+    st.rerun() 
 
 
 # --- MÓDULOS DE NAVEGACIÓN (FLUJO PRINCIPAL) ---
@@ -230,10 +233,9 @@ def show_typing_game():
             time.sleep(1)
             st.rerun()
         else:
-            # Finaliza la cuenta, inicia el cronómetro de lectura y pasa a la fase activa
             st.session_state.current_phase = "READING_ACTIVE"
-            st.session_state.start_time = time.time() # INICIO DEL CRONÓMETRO DE LECTURA
-            st.session_state.update_count = 0 # Contador para el refresco del cronómetro
+            st.session_state.start_time = time.time() 
+            st.session_state.update_count = 0 
             st.rerun()
 
 
@@ -248,7 +250,6 @@ def show_typing_game():
 
         if st.button("▶️ Comenzar el Test (Iniciar Cuenta Regresiva)"): 
             if st.session_state.agente_id:
-                # SALTA DIRECTO A COUNTDOWN
                 st.session_state.current_phase = "COUNTDOWN" 
                 st.session_state.countdown_start = time.time()
                 st.session_state.countdown_target = 5 
@@ -263,37 +264,33 @@ def show_typing_game():
         st.subheader("📚 Paso 1: Lee el siguiente texto con atención")
         st.info("📢 **IMPORTANTE:** Cuando termines de leer y creas haber entendido el texto, presiona el botón para detener el cronómetro y pasar a la prueba de tecleo.")
         
-        # Muestra el texto legible
         st.markdown(f'<div class="typing-text">{TEXTO_PRUEBA_GINCANA}</div>', unsafe_allow_html=True)
 
         tiempo_placeholder = st.empty()
         
-        # CRONÓMETRO DE LECTURA DE BAJA FRECUENCIA (Para no bloquear el botón)
         tiempo_transcurrido = time.time() - st.session_state.start_time
         tiempo_placeholder.info(f"⏰ Tiempo de lectura transcurrido: **{int(tiempo_transcurrido)}** segundos.")
         
-        # Pequeño bucle que solo se ejecuta unas pocas veces para dar feedback inicial sin ser intrusivo
-        if st.session_state.update_count < 15: # Refresca por ~7.5 segundos (15 * 0.5s)
+        if st.session_state.update_count < 15: 
             st.session_state.update_count += 1
             time.sleep(0.5)
             st.rerun()
 
 
         if st.button("Terminé de leer y Continuar a la Prueba de Tecleo ➡️"):
-            # Captura el tiempo final al presionar
             if st.session_state.start_time:
                 st.session_state.reading_time = time.time() - st.session_state.start_time
             else:
                  st.session_state.reading_time = 0 
                  
             st.session_state.current_phase = "TYPING"
-            st.session_state.start_time = time.time() # Reinicia el cronómetro para el tecleo
+            st.session_state.start_time = time.time() 
             st.snow()
             st.rerun()
 
 
     # ----------------------------------------
-    # FASE 3: TECLEO (JUEGO CON DISTRACCIÓN Y RESTRICCIÓN DE PEGADO)
+    # FASE 3: TECLEO (JUEGO CON DISTRACCIÓN)
     # ----------------------------------------
     elif st.session_state.current_phase == "TYPING":
         
@@ -307,7 +304,6 @@ def show_typing_game():
         if 'progress_value' not in st.session_state:
             st.session_state.progress_value = 0.05
         
-        # Modifica el valor en cada ciclo para que parezca que "se mueve" y nunca llega a 100% o 0%
         st.session_state.progress_value = (st.session_state.progress_value + 0.01) % 0.9 + 0.05
         st.progress(st.session_state.progress_value, text="**🚨 Atención:** Proceso interno en ejecución... ¡Concéntrate! 🚨")
         st.markdown("---")
@@ -320,45 +316,16 @@ def show_typing_game():
 
         st.markdown(f'<div class="typing-text">{TEXTO_PRUEBA_GINCANA}</div>', unsafe_allow_html=True)
         
-        # --- RESTRICCIÓN DE PEGADO CON JAVASCRIPT ---
-        js_code = """
-        <script>
-            function disablePasteAndContextMenu() {
-                // Selecciona el área de texto por su data-testid
-                const textarea = document.querySelector('[data-testid="stTextarea"] textarea');
-                if (textarea) {
-                    // Deshabilitar la acción de Pegar (Ctrl+V / Cmd+V), Copiar, Cortar
-                    textarea.onkeydown = (event) => {
-                        const isCtrlOrCmd = event.ctrlKey || event.metaKey;
-                        const key = event.key.toLowerCase();
-                        
-                        // Bloquea Pegar (v), Copiar (c), y Cortar (x)
-                        if (isCtrlOrCmd && (key === 'v' || key === 'c' || key === 'x')) {
-                            event.preventDefault();
-                        }
-                    };
-                    // Deshabilitar el menú contextual (clic derecho)
-                    textarea.oncontextmenu = (event) => {
-                        event.preventDefault();
-                    };
-                }
-            }
-            // Ejecutar la función después de un pequeño retraso para asegurar que el DOM cargue
-            setTimeout(disablePasteAndContextMenu, 1000);
-        </script>
-        """
-        st.markdown(js_code, unsafe_allow_html=True)
-        # ---------------------------------------------
+        # Se elimina el JS de restricción de pegado
 
-        texto_escrito = st.text_area("Comienza a escribir aquí... (No se permite Copiar/Pegar) 👇", 
+        texto_escrito = st.text_area("Comienza a escribir aquí... 👇", 
                                      height=200, 
                                      key="typing_area", 
                                      value=st.session_state.texto_escrito,
                                      disabled=tiempo_restante <= 0)
         
-        st.session_state.texto_escrito = texto_escrito # Mantiene el valor actualizado para la visualización
+        st.session_state.texto_escrito = texto_escrito 
 
-        # Bucle de refresco del cronómetro de tecleo y distracción
         if tiempo_restante > 0 and tiempo_restante <= DURACION_SEGUNDOS:
             time.sleep(1)
             st.rerun() 
@@ -368,10 +335,8 @@ def show_typing_game():
             st.session_state.typing_finished = True
             st.rerun()
             
-        # El botón de finalización ahora es más claro
         if st.session_state.get('typing_finished', False) or st.button("✅ Terminé de Teclear y Continuar (Para usuarios rápidos)"): 
             
-            # SOLUCIÓN: CAPTURAR EL VALOR FINAL DEL TEXT AREA POR SU KEY ANTES DE LA TRANSICIÓN
             if 'typing_area' in st.session_state:
                  st.session_state.texto_escrito = st.session_state.typing_area
             
@@ -407,11 +372,11 @@ def show_typing_game():
             st.rerun()
 
     # ----------------------------------------
-    # FASE 5: RESULTADOS Y GUARDADO
+    # FASE 5: RESULTADOS Y GUARDADO (CON DETECCIÓN DE TRAMPA)
     # ----------------------------------------
     elif st.session_state.current_phase == "RESULTS":
         
-        wpm, precision, errores, rpm = calcular_metrics(
+        wpm_calculado, precision, errores, rpm = calcular_metrics(
             TEXTO_PRUEBA_GINCANA, 
             st.session_state.texto_escrito, 
             st.session_state.typing_time,
@@ -423,10 +388,22 @@ def show_typing_game():
             if st.session_state.comprehension_answers[i] == item["respuesta_correcta"]:
                 respuestas_correctas += 1
 
+        # --- LÓGICA DE DETECCIÓN DE TRAMPA ---
+        wpm_guardar_value = wpm_calculado
+        wpm_display_value = f"{wpm_calculado:.2f}"
+        mensaje_trampa = None
+        
+        if wpm_calculado >= WPM_LIMITE:
+            mensaje_trampa = "🚨 ¡TRAMPA DETECTADA! (WPM > 80)"
+            wpm_guardar_value = -1 # Valor para registrar la trampa en Sheets
+            wpm_display_value = "🚫 TRAMPA" 
+            
+        # ------------------------------------
+
         st.session_state.results = {
             'ID Agente': st.session_state.agente_id,
             'Fecha/Hora': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            'WPM': wpm,
+            'WPM': wpm_guardar_value, 
             'Precisión (%)': precision,
             'Errores': errores,
             'Duracion Tecleo (s)': round(st.session_state.typing_time, 2),
@@ -439,11 +416,16 @@ def show_typing_game():
         st.subheader("📊 Tus Resultados Finales")
         
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Velocidad (WPM)", f"{st.session_state.results['WPM']:.2f}")
+        
+        col1.metric("Velocidad (WPM)", wpm_display_value) 
         col2.metric("Lectura (RPM)", f"{st.session_state.results['RPM']:.2f}")
         col3.metric("Precisión", f"{st.session_state.results['Precisión (%)']:.2f}%")
         col4.metric("Comprensión", f"{st.session_state.results['Respuestas Correctas']}/{len(PREGUNTAS_COMPRENSION)}")
         
+        if mensaje_trampa:
+            st.error(mensaje_trampa) 
+            st.warning(f"**Nota:** Tu WPM calculado fue **{wpm_calculado:.2f}**. El resultado guardado en la base de datos es **-1** para marcar la infracción.")
+            
         st.markdown("---")
         
         st.info("⚠️ Las métricas de 'borrado' no están disponibles en Streamlit nativo. Se utiliza WPM Neto y Errores de Carácter.")
@@ -459,10 +441,8 @@ def show_typing_game():
         elif st.session_state.saving and not st.session_state.guardado_exitoso:
             st.error("❌ Hubo un error al guardar. Revisa el error anterior.")
 
-        # Botón de nueva prueba en la sección de resultados
         if st.button("🔁 Iniciar Nueva Prueba (desde Resultados)"):
             reiniciar_test()
-            st.rerun()
 
 
 # --- MÓDULOS DE RANKING ---
@@ -489,8 +469,15 @@ def show_typing_ranking():
             return
 
         df['WPM'] = pd.to_numeric(df['WPM'], errors='coerce')
-        idx = df.groupby(['ID Agente'])['WPM'].transform(max) == df['WPM']
-        ranking_consolidado = df[idx].sort_values(by='WPM', ascending=False)
+        # Filtramos los valores que son -1 (trampa)
+        df_limpio = df[df['WPM'] >= 0].copy() 
+
+        if df_limpio.empty:
+            st.info("Solo se han registrado resultados con trampa. No hay ranking de WPM válido.")
+            return
+
+        idx = df_limpio.groupby(['ID Agente'])['WPM'].transform(max) == df_limpio['WPM']
+        ranking_consolidado = df_limpio[idx].sort_values(by='WPM', ascending=False)
         
         st.subheader("Mejores Resultados Históricos")
         st.dataframe(ranking_consolidado[['ID Agente', 'WPM', 'Precisión (%)', 'Fecha/Hora']], hide_index=True)
@@ -704,13 +691,11 @@ def show_fcr_global_ranking():
 st.set_page_config(page_title="Plataforma de Productividad", layout="wide")
 st.title("🎯 Plataforma de Productividad del Contact Center")
 
-# Chequeo de conexión y mensaje inicial
 if gsheet_client:
     st.success("✅ Conexión a Google Sheets exitosa (Solo para guardar resultados y rankings).")
 else:
     st.error("❌ Fallo en la conexión a Google Sheets. Los resultados no se podrán guardar ni los rankings se cargarán. Revisa tus Secrets (gsheet_id y credenciales).")
 
-# Inicialización de estado global (Máquina de estados)
 if 'current_phase' not in st.session_state: reiniciar_test() 
 
 # --- BARRA DE NAVEGACIÓN LATERAL ---
@@ -728,7 +713,6 @@ menu_options = {
 selection = st.sidebar.radio("Selecciona una sección:", list(menu_options.keys()))
 current_module = menu_options[selection]
 
-# Botón de Reinicio Global en la Barra Lateral
 st.sidebar.markdown("---")
 if st.sidebar.button("🚨 Reiniciar Test (En cualquier momento)"):
     reiniciar_test()
