@@ -205,13 +205,6 @@ def reiniciar_test():
     st.session_state.results = None
 
 
-def start_countdown():
-    """Muestra una cuenta regresiva de 5 segundos y luego cambia a la fase de Lectura."""
-    st.session_state.current_phase = "COUNTDOWN"
-    st.session_state.countdown_target = 5
-    st.session_state.start_time = time.time() # Inicia el tiempo de lectura aquí
-    st.rerun()
-
 # --- MÓDULOS DE NAVEGACIÓN (FLUJO PRINCIPAL) ---
 
 def show_typing_game():
@@ -224,6 +217,8 @@ def show_typing_game():
     # ----------------------------------------
     if st.session_state.current_phase == "COUNTDOWN":
         placeholder = st.empty()
+        
+        # Usamos el tiempo actual para calcular el restante
         tiempo_transcurrido = time.time() - st.session_state.countdown_start
         tiempo_restante = st.session_state.countdown_target - int(tiempo_transcurrido)
         
@@ -232,9 +227,9 @@ def show_typing_game():
             time.sleep(1)
             st.rerun()
         else:
-            # Finaliza la cuenta y pasa a la lectura
+            # Finaliza la cuenta, inicia el cronómetro de lectura y pasa a la fase activa
             st.session_state.current_phase = "READING_ACTIVE"
-            st.session_state.start_time = time.time()
+            st.session_state.start_time = time.time() # INICIO DEL CRONÓMETRO DE LECTURA
             st.rerun()
 
 
@@ -244,7 +239,6 @@ def show_typing_game():
     if st.session_state.current_phase == "ID_INPUT":
         st.session_state.agente_id = st.text_input("Ingresa tu ID de Agente:", key="agente_id_input")
         
-        # Muestra la información y el botón para iniciar la cuenta regresiva
         st.subheader("📚 Paso 1: Información Importante")
         st.info("ℹ️ **Antes de comenzar:** Esta prueba tiene 3 partes. Primero, leerás un texto. El tiempo de lectura (**RPM**) influye en tu resultado. Luego, tendrás 60 segundos para teclear y, finalmente, responderás 3 preguntas de comprensión.")
 
@@ -260,12 +254,8 @@ def show_typing_game():
     # ----------------------------------------
     elif st.session_state.current_phase == "READING_WARNING":
         st.subheader("🛑 Listo para Iniciar la Lectura")
-        st.warning("⚠️ **Advertencia:** Al presionar 'Comenzar a Contar', iniciarás una cuenta regresiva de 5 segundos, y el cronómetro de lectura comenzará inmediatamente después.")
+        st.warning("⚠️ **Advertencia:** Al presionar 'Comenzar a Contar', iniciarás una cuenta regresiva de 5 segundos. **El texto aparecerá y el tiempo de lectura comenzará inmediatamente después.**")
         
-        # Muestra el texto por adelantado
-        st.markdown(f'<div class="typing-text">{TEXTO_PRUEBA_GINCANA}</div>', unsafe_allow_html=True)
-        st.caption("El tiempo de lectura comenzará en el siguiente paso.")
-
         if st.button("Comenzar a Contar (5 Segundos)"):
             st.session_state.current_phase = "COUNTDOWN"
             st.session_state.countdown_start = time.time()
@@ -274,16 +264,22 @@ def show_typing_game():
 
 
     # ----------------------------------------
-    # FASE 2B: LECTURA DEL TEXTO (CRONÓMETRO ACTIVO)
+    # FASE 2B: LECTURA DEL TEXTO (CRONÓMETRO ACTIVO Y VISIBLE)
     # ----------------------------------------
     elif st.session_state.current_phase == "READING_ACTIVE":
         st.subheader("📚 Paso 1: Lee el siguiente texto con atención")
         
-        # Muestra el texto correctamente formateado y legible
+        # Muestra el texto legible
         st.markdown(f'<div class="typing-text">{TEXTO_PRUEBA_GINCANA}</div>', unsafe_allow_html=True)
 
+        tiempo_placeholder = st.empty()
         tiempo_transcurrido = time.time() - st.session_state.start_time
-        st.info(f"⏰ Tiempo de lectura transcurrido: **{int(tiempo_transcurrido)}** segundos.")
+        tiempo_placeholder.info(f"⏰ Tiempo de lectura transcurrido: **{int(tiempo_transcurrido)}** segundos.")
+        
+        # Refresca cada 1 segundo para mostrar el tiempo
+        time.sleep(1)
+        st.rerun()
+
 
         if st.button("Terminé de leer y Continúar a la Prueba de Tecleo ➡️"):
             st.session_state.reading_time = tiempo_transcurrido
@@ -308,7 +304,6 @@ def show_typing_game():
         else:
             timer_placeholder.error("🚨 ¡TIEMPO AGOTADO! Tu tecleo ha terminado. Presiona Continuar.")
 
-        # Muestra el texto de referencia con el formato corregido
         st.markdown(f'<div class="typing-text">{TEXTO_PRUEBA_GINCANA}</div>', unsafe_allow_html=True)
 
         texto_escrito = st.text_area("Comienza a escribir aquí...", 
@@ -328,7 +323,6 @@ def show_typing_game():
             st.session_state.typing_finished = True
             st.rerun()
             
-        # Botón que aparece cuando el tiempo ha terminado o si se presiona anticipadamente
         if st.session_state.get('typing_finished', False) or st.button("🛑 Finalizar Tecleo (Anticipado) y Continuar"):
             if not st.session_state.get('typing_finished', False):
                 st.session_state.typing_time = time.time() - st.session_state.start_time
