@@ -203,6 +203,7 @@ def reiniciar_test():
     st.session_state.guardado_exitoso = False
     st.session_state.comprehension_answers = [None] * len(PREGUNTAS_COMPRENSION)
     st.session_state.results = None
+    st.rerun() # Fuerza el reinicio de la aplicación
 
 
 # --- MÓDULOS DE NAVEGACIÓN (FLUJO PRINCIPAL) ---
@@ -218,7 +219,6 @@ def show_typing_game():
     if st.session_state.current_phase == "COUNTDOWN":
         placeholder = st.empty()
         
-        # Usamos el tiempo actual para calcular el restante
         tiempo_transcurrido = time.time() - st.session_state.countdown_start
         tiempo_restante = st.session_state.countdown_target - int(tiempo_transcurrido)
         
@@ -273,16 +273,25 @@ def show_typing_game():
         st.markdown(f'<div class="typing-text">{TEXTO_PRUEBA_GINCANA}</div>', unsafe_allow_html=True)
 
         tiempo_placeholder = st.empty()
-        tiempo_transcurrido = time.time() - st.session_state.start_time
-        tiempo_placeholder.info(f"⏰ Tiempo de lectura transcurrido: **{int(tiempo_transcurrido)}** segundos.")
         
-        # Refresca cada 1 segundo para mostrar el tiempo
-        time.sleep(1)
-        st.rerun()
+        # Verifica si el tiempo de inicio existe para el cálculo del tiempo transcurrido
+        if st.session_state.start_time:
+            tiempo_transcurrido = time.time() - st.session_state.start_time
+            tiempo_placeholder.info(f"⏰ Tiempo de lectura transcurrido: **{int(tiempo_transcurrido)}** segundos.")
+            
+            # Refresca cada 1 segundo para mostrar el tiempo
+            time.sleep(1)
+            st.rerun()
+        else:
+            tiempo_placeholder.info("⏰ Tiempo de lectura: 0 segundos.")
 
 
         if st.button("Terminé de leer y Continúar a la Prueba de Tecleo ➡️"):
-            st.session_state.reading_time = tiempo_transcurrido
+            if st.session_state.start_time:
+                st.session_state.reading_time = time.time() - st.session_state.start_time
+            else:
+                 st.session_state.reading_time = 0 
+                 
             st.session_state.current_phase = "TYPING"
             st.session_state.start_time = time.time() # Reinicia el cronómetro para el tecleo
             st.snow()
@@ -408,7 +417,8 @@ def show_typing_game():
         elif st.session_state.saving and not st.session_state.guardado_exitoso:
             st.error("❌ Hubo un error al guardar. Revisa el error anterior.")
 
-        if st.button("🔁 Iniciar Nueva Prueba"):
+        # Botón de nueva prueba en la sección de resultados
+        if st.button("🔁 Iniciar Nueva Prueba (desde Resultados)"):
             reiniciar_test()
             st.rerun()
 
@@ -652,14 +662,14 @@ def show_fcr_global_ranking():
 st.set_page_config(page_title="Plataforma de Productividad", layout="wide")
 st.title("🎯 Plataforma de Productividad del Contact Center")
 
+# Chequeo de conexión y mensaje inicial
 if gsheet_client:
     st.success("✅ Conexión a Google Sheets exitosa (Solo para guardar resultados y rankings).")
 else:
     st.error("❌ Fallo en la conexión a Google Sheets. Los resultados no se podrán guardar ni los rankings se cargarán. Revisa tus Secrets (gsheet_id y credenciales).")
 
 # Inicialización de estado global (Máquina de estados)
-if 'current_phase' not in st.session_state: reiniciar_test()
-
+if 'current_phase' not in st.session_state: reiniciar_test(False) # No usar st.rerun en la inicialización
 
 # --- BARRA DE NAVEGACIÓN LATERAL ---
 
@@ -675,6 +685,12 @@ menu_options = {
 
 selection = st.sidebar.radio("Selecciona una sección:", list(menu_options.keys()))
 current_module = menu_options[selection]
+
+# Botón de Reinicio Global en la Barra Lateral
+st.sidebar.markdown("---")
+if st.sidebar.button("🚨 Reiniciar Test (En cualquier momento)"):
+    reiniciar_test()
+
 
 if current_module == "game":
     show_typing_game()
