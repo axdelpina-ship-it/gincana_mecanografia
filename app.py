@@ -246,27 +246,16 @@ def show_typing_game():
 
         if st.button("▶️ Comenzar el Test (Iniciar Cuenta Regresiva)"): 
             if st.session_state.agente_id:
-                st.session_state.current_phase = "READING_WARNING" # Paso intermedio para la advertencia
+                # SALTA DIRECTO A COUNTDOWN
+                st.session_state.current_phase = "COUNTDOWN" 
+                st.session_state.countdown_start = time.time()
+                st.session_state.countdown_target = 5 
                 st.rerun()
             else:
                 st.warning("Por favor, ingresa tu ID de Agente para iniciar.")
 
     # ----------------------------------------
-    # FASE 2A: ADVERTENCIA Y BOTÓN DE INICIO DE CUENTA
-    # ----------------------------------------
-    elif st.session_state.current_phase == "READING_WARNING":
-        st.subheader("🛑 Listo para Iniciar la Lectura")
-        st.warning("⚠️ **Advertencia:** Al presionar 'Comenzar a Contar', iniciarás una cuenta regresiva de 5 segundos. **El texto aparecerá y el tiempo de lectura comenzará inmediatamente después.**")
-        
-        if st.button("Comenzar a Contar (5 Segundos)"):
-            st.session_state.current_phase = "COUNTDOWN"
-            st.session_state.countdown_start = time.time()
-            st.session_state.countdown_target = 5
-            st.rerun()
-
-
-    # ----------------------------------------
-    # FASE 2B: LECTURA DEL TEXTO (CRONÓMETRO ACTIVO Y VOLUNTARIO)
+    # FASE 2A: LECTURA DEL TEXTO (CRONÓMETRO ACTIVO Y VOLUNTARIO)
     # ----------------------------------------
     elif st.session_state.current_phase == "READING_ACTIVE":
         st.subheader("📚 Paso 1: Lee el siguiente texto con atención")
@@ -317,7 +306,6 @@ def show_typing_game():
             st.session_state.progress_value = 0.05
         
         # Modifica el valor en cada ciclo para que parezca que "se mueve" y nunca llega a 100% o 0%
-        # Simula un proceso constante y molesto
         st.session_state.progress_value = (st.session_state.progress_value + 0.01) % 0.9 + 0.05
         st.progress(st.session_state.progress_value, text="**🚨 Atención:** Proceso interno en ejecución... ¡Concéntrate! 🚨")
         st.markdown("---")
@@ -336,7 +324,7 @@ def show_typing_game():
                                      value=st.session_state.texto_escrito,
                                      disabled=tiempo_restante <= 0)
         
-        st.session_state.texto_escrito = texto_escrito 
+        st.session_state.texto_escrito = texto_escrito # Mantiene el valor actualizado para la visualización
 
         # Bucle de refresco del cronómetro de tecleo y distracción
         if tiempo_restante > 0 and tiempo_restante <= DURACION_SEGUNDOS:
@@ -349,6 +337,11 @@ def show_typing_game():
             st.rerun()
             
         if st.session_state.get('typing_finished', False) or st.button("🛑 Finalizar Tecleo (Anticipado) y Continuar"):
+            
+            # SOLUCIÓN: CAPTURAR EL VALOR FINAL DEL TEXT AREA POR SU KEY ANTES DE LA TRANSICIÓN
+            if 'typing_area' in st.session_state:
+                 st.session_state.texto_escrito = st.session_state.typing_area
+            
             if not st.session_state.get('typing_finished', False):
                 st.session_state.typing_time = time.time() - st.session_state.start_time
                 
