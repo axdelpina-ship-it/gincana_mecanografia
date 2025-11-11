@@ -4,7 +4,11 @@ from datetime import datetime
 import time
 import re
 import gspread
-from oauth2client.service_account import ServiceCredentials
+
+# --- CAMBIOS CRÍTICOS EN LAS IMPORTACIONES ---
+# 1. Eliminamos la importación obsoleta: from oauth2client.service_account import ServiceCredentials
+# 2. Usamos la importación moderna para las credenciales de servicio de Google:
+from google.oauth2 import service_account 
 
 # --- CONFIGURACIÓN Y CONEXIÓN A GOOGLE SHEETS ---
 
@@ -14,7 +18,9 @@ def get_gsheet_client():
     try:
         creds_info = st.secrets.gcp_service_account 
         
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(
+        # --- CAMBIO CRÍTICO EN LA CONEXIÓN ---
+        # Usamos google.oauth2.service_account en lugar de oauth2client
+        creds = service_account.Credentials.from_service_account_info(
             dict(creds_info), 
             scopes=['https://www.googleapis.com/auth/spreadsheets']
         )
@@ -36,14 +42,12 @@ def get_config_data(client, sheet_id, _):
         config_ws = sheet.worksheet("Configuracion")
         
         texto = config_ws.acell('A2').value
-        # Aseguramos que la duración sea un entero válido
         duracion_val = config_ws.acell('B2').value
-        duracion_seg = int(duracion_val) if duracion_val and duracion_val.isdigit() else 60
+        duracion_seg = int(duracion_val) if duracion_val and str(duracion_val).isdigit() else 60
         
         return texto, duracion_seg
         
     except Exception as e:
-        # Aquí se captura el error si la hoja 'Configuracion' no existe o la celda B2 no es un número
         return f"Error al leer la configuración de Google Sheets: {e}", 60 
 
 # Lectura global de la configuración (pasamos gsheet_client como argumento dummy)
@@ -53,7 +57,6 @@ TEXTO_DE_PRUEBA, DURACION_SEGUNDOS = get_config_data(gsheet_client, st.secrets["
 
 def calcular_wpm_y_precision(texto_original, texto_escrito, tiempo_transcurrido_seg):
     """Calcula WPM y la precisión de la prueba."""
-    # ... (Lógica de cálculo se mantiene igual) ...
     original_limpio = re.sub(r'\s+', ' ', texto_original.strip())
     escrito_limpio = re.sub(r'\s+', ' ', texto_escrito.strip())
     
@@ -108,11 +111,12 @@ def save_typing_results(results_dict):
         st.error(f"❌ ¡ERROR al guardar los resultados! Revisa la hoja 'Resultados Brutos': {e}")
         st.session_state.guardado_exitoso = False
 
+
 # --- MÓDULOS DE NAVEGACIÓN ---
 
 def show_typing_game():
     """Módulo principal: La interfaz de la Gincana de Mecanografía."""
-    st.header("⌨️ Gincana de Mecanografía 🛠️") # ICONO AÑADIDO
+    st.header("⌨️ Gincana de Mecanografía 🛠️")
     st.markdown("---")
 
     # Muestra el error de configuración si existe
@@ -132,11 +136,10 @@ def show_typing_game():
     if not st.session_state.started:
         if st.button(f"🚀 Iniciar Gincana ({DURACION_SEGUNDOS} Segundos)", disabled=not agente_id):
             if agente_id:
-                # Inicializa el estado del juego
                 st.session_state.started = True
                 st.session_state.start_time = time.time()
                 st.session_state.finished = False
-                st.session_state.saving = False # Nueva bandera para evitar doble guardado
+                st.session_state.saving = False
                 st.session_state.texto_escrito = "" 
                 st.session_state.guardado_exitoso = False
                 st.rerun()
@@ -261,7 +264,12 @@ def show_typing_ranking():
         st.subheader("TOP 3")
         
         top3 = ranking_consolidado.head(3).reset_index(drop=True)
-        # Lógica para mostrar el top 3...
+        if not top3.empty:
+            st.metric("🥇 Primer Lugar", f"{top3.loc[0, 'ID Agente']} con {top3.loc[0, 'WPM']} WPM")
+        if len(top3) > 1:
+            st.metric("🥈 Segundo Lugar", f"{top3.loc[1, 'ID Agente']} con {top3.loc[1, 'WPM']} WPM")
+        if len(top3) > 2:
+            st.metric("🥉 Tercer Lugar", f"{top3.loc[2, 'ID Agente']} con {top3.loc[2, 'WPM']} WPM")
 
     except Exception as e:
         st.error(f"❌ Error al generar el ranking: {e}. ¿Están las columnas correctas?")
@@ -289,7 +297,7 @@ if 'started' not in st.session_state: st.session_state.started = False
 if 'finished' not in st.session_state: st.session_state.finished = False
 if 'results' not in st.session_state: st.session_state.results = None
 if 'texto_escrito' not in st.session_state: st.session_state.texto_escrito = ""
-if 'saving' not in st.session_state: st.session_state.saving = False # Nueva bandera de guardado
+if 'saving' not in st.session_state: st.session_state.saving = False 
 if 'guardado_exitoso' not in st.session_state: st.session_state.guardado_exitoso = False
 
 
@@ -299,14 +307,14 @@ st.sidebar.title("Menú de Módulos")
 st.sidebar.markdown("---")
 
 menu_options = {
-    "⌨️ Gincana (Juego) 🛠️": show_typing_game, # Icono añadido al menú
+    "⌨️ Gincana (Juego) 🛠️": show_typing_game,
     "🏆 Ranking de Velocidad": show_typing_ranking,
     "📈 Ranking FCR Semanal": show_fcr_ranking,
 }
 
 selection = st.sidebar.radio("Selecciona una sección:", list(menu_options.keys()))
 
-if selection.startswith("⌨️ Gincana"): # Usamos startswith para manejar el ícono en el menú
+if selection.startswith("⌨️ Gincana"):
     show_typing_game()
 elif selection in menu_options:
     menu_options[selection]()
