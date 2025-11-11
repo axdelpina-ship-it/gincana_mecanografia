@@ -4,10 +4,6 @@ from datetime import datetime
 import time
 import re
 import gspread
-
-# --- CAMBIOS CRÍTICOS EN LAS IMPORTACIONES ---
-# 1. Eliminamos la importación obsoleta: from oauth2client.service_account import ServiceCredentials
-# 2. Usamos la importación moderna para las credenciales de servicio de Google:
 from google.oauth2 import service_account 
 
 # --- CONFIGURACIÓN Y CONEXIÓN A GOOGLE SHEETS ---
@@ -18,8 +14,6 @@ def get_gsheet_client():
     try:
         creds_info = st.secrets.gcp_service_account 
         
-        # --- CAMBIO CRÍTICO EN LA CONEXIÓN ---
-        # Usamos google.oauth2.service_account en lugar de oauth2client
         creds = service_account.Credentials.from_service_account_info(
             dict(creds_info), 
             scopes=['https://www.googleapis.com/auth/spreadsheets']
@@ -31,7 +25,6 @@ def get_gsheet_client():
 
 gsheet_client = get_gsheet_client()
 
-# Función modificada con argumento dummy (_) para evitar el error UnhashableParamError
 def get_config_data(client, sheet_id, _):
     """Lee el texto y la duración de la hoja 'Configuracion'."""
     if not client:
@@ -43,17 +36,24 @@ def get_config_data(client, sheet_id, _):
         
         texto = config_ws.acell('A2').value
         duracion_val = config_ws.acell('B2').value
+        # Aseguramos que la duración sea un entero válido
         duracion_seg = int(duracion_val) if duracion_val and str(duracion_val).isdigit() else 60
         
         return texto, duracion_seg
         
     except Exception as e:
+        # Se verifica si el error es por falta de 'gsheet_id'
+        if "gsheet_id" not in st.secrets:
+            return f"Error: st.secrets no tiene la clave 'gsheet_id'. Revisa tus Secrets.", 60
         return f"Error al leer la configuración de Google Sheets: {e}", 60 
 
-# Lectura global de la configuración (pasamos gsheet_client como argumento dummy)
-TEXTO_DE_PRUEBA, DURACION_SEGUNDOS = get_config_data(gsheet_client, st.secrets["gsheet_id"], gsheet_client)
+# Lectura global de la configuración (la clave 'gsheet_id' DEBE existir en secrets.toml)
+try:
+    TEXTO_DE_PRUEBA, DURACION_SEGUNDOS = get_config_data(gsheet_client, st.secrets["gsheet_id"], gsheet_client)
+except KeyError:
+    TEXTO_DE_PRUEBA, DURACION_SEGUNDOS = "Error: Falta la clave 'gsheet_id' en Streamlit Secrets.", 60
 
-# --- Funciones de Cálculo y Guardado ---
+# --- Funciones de Cálculo y Guardado (sin cambios) ---
 
 def calcular_wpm_y_precision(texto_original, texto_escrito, tiempo_transcurrido_seg):
     """Calcula WPM y la precisión de la prueba."""
@@ -105,12 +105,11 @@ def save_typing_results(results_dict):
         ]
         
         results_ws.append_row(row_data)
-        st.session_state.guardado_exitoso = True # Bandera para mostrar éxito
+        st.session_state.guardado_exitoso = True
         
     except Exception as e:
         st.error(f"❌ ¡ERROR al guardar los resultados! Revisa la hoja 'Resultados Brutos': {e}")
         st.session_state.guardado_exitoso = False
-
 
 # --- MÓDULOS DE NAVEGACIÓN ---
 
@@ -119,20 +118,17 @@ def show_typing_game():
     st.header("⌨️ Gincana de Mecanografía 🛠️")
     st.markdown("---")
 
-    # Muestra el error de configuración si existe
     if TEXTO_DE_PRUEBA.startswith("Error"):
         st.error(TEXTO_DE_PRUEBA)
-        st.warning("No se puede iniciar la prueba sin el texto de configuración.")
+        st.warning("No se puede iniciar la prueba. Revisa la conexión y configuración de Google Sheets.")
         return
 
-    # Input de ID de Agente
     agente_id = st.text_input("Ingresa tu ID de Agente:", key="agente_id_input", disabled=st.session_state.started)
 
-    # 1. Área de Presentación del Texto
+    # ... (Resto de la lógica de show_typing_game se mantiene igual)
     st.subheader("Texto a teclear")
     st.info(TEXTO_DE_PRUEBA)
 
-    # 2. Lógica del Juego
     if not st.session_state.started:
         if st.button(f"🚀 Iniciar Gincana ({DURACION_SEGUNDOS} Segundos)", disabled=not agente_id):
             if agente_id:
@@ -162,27 +158,23 @@ def show_typing_game():
         if tiempo_restante > 0:
             timer_placeholder.warning(f"⏳ Tiempo restante: **{int(tiempo_restante)}** segundos.")
             
-            # Ajuste Anti-Cuota (429): Espera 1 segundo antes de forzar el rerun
             if int(tiempo_restante) > 0:
                 time.sleep(1)
                 st.rerun()    
 
         else:
-            # Lógica de finalización por tiempo agotado
             st.session_state.finished = True
             timer_placeholder.info("¡Tiempo Agotado! Presiona GUARDAR RESULTADOS.")
             st.rerun()
 
-        # Botón de Finalizar Prueba (Anticipada)
         if st.button("🛑 Finalizar Prueba (Anticipada)"):
             st.session_state.finished = True
             st.rerun()
 
-    # 3. Área de Resultados (Finalizado)
     if st.session_state.finished:
         
         tiempo_final = min(DURACION_SEGUNDOS, time.time() - st.session_state.start_time)
-        tiempo_final = max(1, tiempo_final) # Asegurar que el tiempo sea al menos 1
+        tiempo_final = max(1, tiempo_final) 
 
         wpm, precision, errores = calcular_wpm_y_precision(
             TEXTO_DE_PRUEBA, 
@@ -200,27 +192,23 @@ def show_typing_game():
             'Texto Escrito': st.session_state.texto_escrito
         }
         
-        # Muestra resultados inmediatamente
         st.subheader("📊 Tus Resultados")
         col1, col2, col3 = st.columns(3)
         col1.metric("Velocidad (WPM)", f"{st.session_state.results['WPM']:.2f}")
         col2.metric("Precisión", f"{st.session_state.results['Precisión (%)']:.2f}%")
         col3.metric("Errores", f"{st.session_state.results['Errores']}")
 
-        # Botón de Guardar Resultados (SOLO si no ha guardado ya)
         if not st.session_state.saving:
             if st.button("💾 Finalizar Prueba y Guardar Resultados", help="Esto guardará tu registro en Google Sheets"):
                 st.session_state.saving = True
-                save_typing_results(st.session_state.results) # Llama a la función de guardado
-                st.rerun() # Reinicia para mostrar el mensaje de éxito
+                save_typing_results(st.session_state.results)
+                st.rerun()
 
-        # Mensajes de estado del guardado
         if st.session_state.guardado_exitoso:
             st.success("✅ ¡Tu resultado se ha guardado exitosamente!")
         elif st.session_state.saving and not st.session_state.guardado_exitoso:
             st.error("❌ Hubo un error al guardar los resultados. Revisa los mensajes de arriba.")
 
-        # Botón para reiniciar
         if st.button("🔁 Iniciar Nueva Prueba"):
             st.session_state.started = False
             st.session_state.finished = False
@@ -230,7 +218,6 @@ def show_typing_game():
             st.session_state.guardado_exitoso = False
             st.rerun()
 
-# --- RANKING DE VELOCIDAD Y FCR (Sin cambios, solo por completitud) ---
 
 def show_typing_ranking():
     """Módulo: Ranking de la Prueba de Velocidad."""
@@ -276,11 +263,87 @@ def show_typing_ranking():
 
 
 def show_fcr_ranking():
-    """Módulo: Ranking Semanal de FCR."""
-    st.header("📈 Ranking FCR Semanal")
+    """Módulo: Ranking Semanal de FCR, dinámico con medallas y barra de progreso."""
+    st.header("📈 Ranking FCR Semanal: Eficiencia y Calidad")
     st.markdown("---")
-    st.warning("⚠️ **Pendiente de Datos:** Este ranking necesita que conectes una pestaña o fuente con datos semanales de FCR.")
     
+    client = get_gsheet_client()
+    if not client:
+        st.error("❌ No se pudo conectar a Google Sheets. Revisa tu configuración de Secrets.")
+        return
+
+    try:
+        sheet = client.open_by_key(st.secrets["gsheet_id"]) 
+        # ASUMIMOS que la pestaña se llama 'Ranking FCR Semanal'
+        results_ws = sheet.worksheet("Ranking FCR Semanal")
+        
+        # Obtenemos los datos (columnas A a I)
+        data = results_ws.get_all_records()
+        df = pd.DataFrame(data)
+
+        if df.empty:
+            st.info("📊 Aún no hay datos en la pestaña 'Ranking FCR Semanal'.")
+            return
+
+        # 1. Limpieza y preparación de datos
+        # Asumimos que la Columna 'Ranking' y la Columna '% +' (H) son críticas
+        # Se limpia la columna de porcentaje, eliminando el '%' y convirtiendo a float
+        df['% +'] = df['% +'].astype(str).str.replace('%', '').str.replace(',', '.').astype(float)
+        
+        # Ordenar por el Ranking (Columna A) o por el porcentaje (mayor es mejor)
+        df = df.sort_values(by='Ranking', ascending=True).reset_index(drop=True)
+
+        # 2. Mostrar TOP 3 con Medallas
+        st.subheader("🏆 TOP 3 Semanal")
+        top3 = df.head(3)
+        col1, col2, col3 = st.columns(3)
+        
+        if not top3.empty:
+            col1.metric("🥇 1er Lugar", f"{top3.loc[0, 'Empleado']}", f"{top3.loc[0, '% +']:.2f}%")
+        if len(top3) > 1:
+            col2.metric("🥈 2do Lugar", f"{top3.loc[1, 'Empleado']}", f"{top3.loc[1, '% +']:.2f}%")
+        if len(top3) > 2:
+            col3.metric("🥉 3er Lugar", f"{top3.loc[2, 'Empleado']}", f"{top3.loc[2, '% +']:.2f}%")
+
+        st.markdown("---")
+        st.subheader("Tabla de Posiciones y Progreso")
+
+        # 3. Mostrar la tabla completa con barra de progreso
+        
+        # Obtenemos el valor máximo (para normalizar la barra de progreso)
+        max_percentage = df['% +'].max()
+        if max_percentage == 0:
+            max_percentage = 1 # Evitar división por cero
+
+        # Crear una columna visual para el progreso
+        df['Progreso'] = df['% +'].apply(lambda x: f"|{'█' * int(x/max_percentage * 20)}{'░' * int(20 - x/max_percentage * 20)}| {x:.2f}%")
+        
+        # Mostrar las columnas más importantes (A, B, H, Progreso)
+        st.dataframe(
+            df[['Ranking', 'Empleado', 'Chats', 'Cantidad +', '% +', 'Progreso']],
+            column_config={
+                "Progreso": st.column_config.ProgressColumn(
+                    "Progreso FCR",
+                    help="Proximidad al mejor porcentaje de FCR/CSAT Positivo",
+                    format="%.2f%%",
+                    min_value=0,
+                    max_value=max_percentage,
+                ),
+                "% +": st.column_config.NumberColumn(
+                    "Porcentaje Positivo",
+                    format="%.2f%%",
+                )
+            },
+            hide_index=True
+        )
+
+    except gspread.WorksheetNotFound:
+        st.error(f"❌ La hoja de cálculo NO tiene una pestaña llamada 'Ranking FCR Semanal'.")
+        st.warning("Por favor, crea la pestaña con este nombre y asegúrate de que tenga las columnas A-I con datos.")
+    except Exception as e:
+        st.error(f"❌ Error al generar el Ranking FCR. ¿Están las columnas y el formato de datos correctos?: {e}")
+
+
 # --- FUNCIÓN PRINCIPAL DE LA APP ---
 
 st.set_page_config(page_title="Gincana Contact Center", layout="wide")
@@ -314,7 +377,5 @@ menu_options = {
 
 selection = st.sidebar.radio("Selecciona una sección:", list(menu_options.keys()))
 
-if selection.startswith("⌨️ Gincana"):
-    show_typing_game()
-elif selection in menu_options:
+if selection in menu_options:
     menu_options[selection]()
