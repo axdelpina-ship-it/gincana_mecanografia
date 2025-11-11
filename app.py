@@ -310,8 +310,6 @@ def show_fcr_ranking(worksheet_name):
         if max_percentage == 0:
             max_percentage = 1 # Evitar división por cero
 
-        # Crear una columna visual para el progreso (Streamlit la renderiza como barra)
-        
         # Usamos st.dataframe con column_config para renderizar la barra de progreso
         st.dataframe(
             df[['Ranking', 'Empleado', 'Chats', 'Cantidad +', '% +']],
@@ -334,6 +332,144 @@ def show_fcr_ranking(worksheet_name):
         st.warning(f"Por favor, asegúrate de crear la pestaña y nombrarla exactamente: '{worksheet_name}'.")
     except Exception as e:
         st.error(f"❌ Error al generar el Ranking FCR. ¿Están las columnas correctas?: {e}")
+
+
+def show_fcr_global_ranking():
+    """Consolida datos de todos los turnos, calcula el TOP 10 global y muestra las métricas."""
+    st.header("👑 TOP 10 Global FCR/CSAT")
+    st.markdown("---")
+    
+    client = get_gsheet_client()
+    if not client:
+        st.error("❌ No se pudo conectar a Google Sheets para el ranking global.")
+        return
+
+    # 1. Definir Hojas a Consolidar
+    fcr_sheets = {
+        "PM": "Ranking FCR Semanal - PM",
+        "AM": "Ranking FCR Semanal - AM",
+        "NT1": "Ranking FCR Semanal - NT1",
+        "NT2": "Ranking FCR Semanal - NT2",
+    }
+    
+    all_data = []
+    
+    # 2. Consolidar Datos de Todos los Turnos
+    for turno_key, sheet_name in fcr_sheets.items():
+        try:
+            sheet = client.open_by_key(st.secrets["gsheet_id"])
+            results_ws = sheet.worksheet(sheet_name)
+            
+            df_turno = pd.DataFrame(results_ws.get_all_records())
+            
+            # Limpiar y convertir columnas clave
+            if 'Total P+N' in df_turno.columns:
+                # La columna 'Total P+N' es la principal para ordenar
+                df_turno['Total P+N'] = pd.to_numeric(df_turno['Total P+N'], errors='coerce').fillna(0)
+            
+            if '% +' in df_turno.columns:
+                # El porcentaje '+' es el criterio de desempate
+                df_turno['% +'] = df_turno['% +'].astype(str).str.replace('%', '').str.replace(',', '.').astype(float)
+                
+            df_turno['Turno'] = turno_key
+            all_data.append(df_turno)
+            
+        except gspread.WorksheetNotFound:
+            st.warning(f"⚠️ Omisión: No se encontró la hoja '{sheet_name}'.")
+        except Exception as e:
+            st.error(f"❌ Error al procesar datos del turno {turno_key}: {e}")
+            
+    if not all_data:
+        st.info("No se pudo cargar la data de ningún turno.")
+        return
+
+    # Consolidar todos los DataFrames
+    df_consolidado = pd.concat(all_data, ignore_index=True)
+    
+    # Asegurar que solo tenemos una entrada por empleado y limpiar filas sin datos en las columnas clave
+    # Usamos groupby para tomar la mejor fila si un empleado aparece varias veces (e.g., el mismo agente hizo un cambio de turno)
+    # Aquí asumimos que queremos el mejor resultado (Total P+N más alto)
+    df_consolidado = df_consolidado.loc[df_consolidado.groupby('Empleado')['Total P+N'].idxmax()]
+    df_consolidado = df_consolidado.dropna(subset=['Empleado', 'Total P+N', '% +'])
+    
+    # 3. Ordenar el Ranking Global
+    # Criterio principal: 'Total P+N' descendente. Criterio secundario (desempate): '% +' descendente
+    df_consolidado = df_consolidado.sort_values(
+        by=['Total P+N', '% +'], 
+        ascending=[False, False]
+    ).reset_index(drop=True)
+
+    df_top10 = df_consolidado.head(10).copy()
+    
+    if df_top10.empty:
+        st.info("No hay suficientes datos para generar el TOP 10.")
+        return
+
+    # 4. Mostrar el Scoreboard y Mensajes Destacados
+    
+    st.subheader("🥇 Los Héroes de la Semana")
+    
+    # Encontrar líder en Total P+N y en % +
+    global_leader = df_top10.iloc[0]
+    high_pct_leader = df_top10.loc[df_top10['% +'].idxmax()]
+    
+    col_trophy, col_msg = st.columns([1, 4])
+    
+    with col_trophy:
+        st.markdown(f"## 🏆")
+        st.markdown(f"## 👑")
+    
+    with col_msg:
+        # 5. Generar Notas Importantes (Felicitar y Desempate)
+        st.info(
+            f"**¡Felicidades, {global_leader['Empleado']}!** se corona como el operador global con el **mayor volumen de satisfacción** ({global_leader['Total P+N']:.0f} Total P+N)."
+        )
+        st.success(
+            f"**{high_pct_leader['Empleado']}** destaca con el **porcentaje positivo más alto** del top ({high_pct_leader['% +']:.2f}%)."
+        )
+        
+        # Lógica para Nota de Desempate (simple)
+        desempate_count = df_consolidado['Total P+N'].duplicated(keep='first').sum()
+        if desempate_count > 0:
+            st.warning(
+                f"**Nota Importante:** Los desempates en 'Total P+N' fueron resueltos utilizando el criterio secundario del porcentaje positivo (**% +**)."
+            )
+
+    st.markdown("---")
+    
+    # 6. Visualizar el TOP 10 en tabla
+    st.subheader("Tabla Consolidada (TOP 10)")
+    
+    max_pn_value = df_top10['Total P+N'].max()
+    if max_pn_value == 0: max_pn_value = 1
+
+    st.dataframe(
+        df_top10[[
+            'Empleado', 
+            'Turno', 
+            'Total P+N', 
+            '% +', 
+            'Chats', 
+            'Cantidad +'
+        ]].reset_index(drop=True).assign(Rank=lambda x: x.index + 1),
+        column_order=('Rank', 'Empleado', 'Turno', 'Total P+N', '% +', 'Chats', 'Cantidad +'),
+        column_config={
+            "Total P+N": st.column_config.ProgressColumn(
+                "Total P+N (Volumen)",
+                help="Volumen total de satisfacción (P+N)",
+                format="%d",
+                min_value=0,
+                max_value=max_pn_value,
+            ),
+            "% +": st.column_config.NumberColumn(
+                "Porcentaje Positivo",
+                format="%.2f%%",
+            ),
+            "Turno": st.column_config.TextColumn("Turno"),
+            "Rank": st.column_config.NumberColumn("Posición", format="%d")
+        },
+        hide_index=True
+    )
 
 
 # --- FUNCIÓN PRINCIPAL DE LA APP ---
@@ -364,6 +500,7 @@ menu_options = {
     "⌨️ Gincana (Juego) 🛠️": "game",
     "🏆 Ranking de Velocidad": "typing_ranking",
     "📈 Ranking FCR Semanal": "fcr_ranking",
+    "👑 TOP 10 FCR Global": "fcr_global_ranking",
 }
 
 selection = st.sidebar.radio("Selecciona una sección:", list(menu_options.keys()))
@@ -375,12 +512,11 @@ if current_module == "game":
 elif current_module == "typing_ranking":
     show_typing_ranking()
 
-# --- Lógica del Menú Desplegable para FCR ---
+# --- Lógica del Menú Desplegable para FCR Semanal por Turno ---
 elif current_module == "fcr_ranking":
     st.sidebar.markdown("---")
     st.sidebar.subheader("Seleccionar Turno FCR")
     
-    # Define las cuatro hojas de cálculo por turno
     fcr_sheets = {
         "Turno PM": "Ranking FCR Semanal - PM",
         "Turno AM": "Ranking FCR Semanal - AM",
@@ -388,13 +524,15 @@ elif current_module == "fcr_ranking":
         "Turno Noche (NT2)": "Ranking FCR Semanal - NT2",
     }
     
-    # Creamos el menú de selección de turno
     turno_selection = st.sidebar.radio(
         "Ver Ranking del Turno:", 
         list(fcr_sheets.keys()),
-        index=0 # Por defecto, selecciona el PM
+        index=0
     )
     
-    # Llamamos a la función de ranking con el nombre de la hoja seleccionada
     worksheet_name = fcr_sheets[turno_selection]
     show_fcr_ranking(worksheet_name)
+    
+# --- Lógica para el Ranking Global ---
+elif current_module == "fcr_global_ranking":
+    show_fcr_global_ranking()
