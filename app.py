@@ -25,6 +25,7 @@ def get_gsheet_client():
 
 gsheet_client = get_gsheet_client()
 
+# Función con argumento dummy (_) para evitar el UnhashableParamError
 def get_config_data(client, sheet_id, _):
     """Lee el texto y la duración de la hoja 'Configuracion'."""
     if not client:
@@ -36,24 +37,22 @@ def get_config_data(client, sheet_id, _):
         
         texto = config_ws.acell('A2').value
         duracion_val = config_ws.acell('B2').value
-        # Aseguramos que la duración sea un entero válido
         duracion_seg = int(duracion_val) if duracion_val and str(duracion_val).isdigit() else 60
         
         return texto, duracion_seg
         
     except Exception as e:
-        # Se verifica si el error es por falta de 'gsheet_id'
         if "gsheet_id" not in st.secrets:
             return f"Error: st.secrets no tiene la clave 'gsheet_id'. Revisa tus Secrets.", 60
+        # Maneja el error específico de hoja no encontrada o celda no numérica
         return f"Error al leer la configuración de Google Sheets: {e}", 60 
 
-# Lectura global de la configuración (la clave 'gsheet_id' DEBE existir en secrets.toml)
 try:
     TEXTO_DE_PRUEBA, DURACION_SEGUNDOS = get_config_data(gsheet_client, st.secrets["gsheet_id"], gsheet_client)
 except KeyError:
     TEXTO_DE_PRUEBA, DURACION_SEGUNDOS = "Error: Falta la clave 'gsheet_id' en Streamlit Secrets.", 60
 
-# --- Funciones de Cálculo y Guardado (sin cambios) ---
+# --- Funciones de Cálculo y Guardado ---
 
 def calcular_wpm_y_precision(texto_original, texto_escrito, tiempo_transcurrido_seg):
     """Calcula WPM y la precisión de la prueba."""
@@ -111,6 +110,7 @@ def save_typing_results(results_dict):
         st.error(f"❌ ¡ERROR al guardar los resultados! Revisa la hoja 'Resultados Brutos': {e}")
         st.session_state.guardado_exitoso = False
 
+
 # --- MÓDULOS DE NAVEGACIÓN ---
 
 def show_typing_game():
@@ -125,7 +125,6 @@ def show_typing_game():
 
     agente_id = st.text_input("Ingresa tu ID de Agente:", key="agente_id_input", disabled=st.session_state.started)
 
-    # ... (Resto de la lógica de show_typing_game se mantiene igual)
     st.subheader("Texto a teclear")
     st.info(TEXTO_DE_PRUEBA)
 
@@ -262,9 +261,9 @@ def show_typing_ranking():
         st.error(f"❌ Error al generar el ranking: {e}. ¿Están las columnas correctas?")
 
 
-def show_fcr_ranking():
+def show_fcr_ranking(worksheet_name):
     """Módulo: Ranking Semanal de FCR, dinámico con medallas y barra de progreso."""
-    st.header("📈 Ranking FCR Semanal: Eficiencia y Calidad")
+    st.header(f"📈 Ranking FCR Semanal: {worksheet_name.replace('Ranking FCR Semanal - ', '')}")
     st.markdown("---")
     
     client = get_gsheet_client()
@@ -274,20 +273,17 @@ def show_fcr_ranking():
 
     try:
         sheet = client.open_by_key(st.secrets["gsheet_id"]) 
-        # ASUMIMOS que la pestaña se llama 'Ranking FCR Semanal'
-        results_ws = sheet.worksheet("Ranking FCR Semanal")
+        results_ws = sheet.worksheet(worksheet_name)
         
-        # Obtenemos los datos (columnas A a I)
         data = results_ws.get_all_records()
         df = pd.DataFrame(data)
 
         if df.empty:
-            st.info("📊 Aún no hay datos en la pestaña 'Ranking FCR Semanal'.")
+            st.info(f"📊 Aún no hay datos en la pestaña '{worksheet_name}'.")
             return
 
         # 1. Limpieza y preparación de datos
-        # Asumimos que la Columna 'Ranking' y la Columna '% +' (H) son críticas
-        # Se limpia la columna de porcentaje, eliminando el '%' y convirtiendo a float
+        # Asumimos que la columna '% +' (H) es la clave
         df['% +'] = df['% +'].astype(str).str.replace('%', '').str.replace(',', '.').astype(float)
         
         # Ordenar por el Ranking (Columna A) o por el porcentaje (mayor es mejor)
@@ -310,38 +306,34 @@ def show_fcr_ranking():
 
         # 3. Mostrar la tabla completa con barra de progreso
         
-        # Obtenemos el valor máximo (para normalizar la barra de progreso)
         max_percentage = df['% +'].max()
         if max_percentage == 0:
             max_percentage = 1 # Evitar división por cero
 
-        # Crear una columna visual para el progreso
-        df['Progreso'] = df['% +'].apply(lambda x: f"|{'█' * int(x/max_percentage * 20)}{'░' * int(20 - x/max_percentage * 20)}| {x:.2f}%")
+        # Crear una columna visual para el progreso (Streamlit la renderiza como barra)
         
-        # Mostrar las columnas más importantes (A, B, H, Progreso)
+        # Usamos st.dataframe con column_config para renderizar la barra de progreso
         st.dataframe(
-            df[['Ranking', 'Empleado', 'Chats', 'Cantidad +', '% +', 'Progreso']],
+            df[['Ranking', 'Empleado', 'Chats', 'Cantidad +', '% +']],
             column_config={
-                "Progreso": st.column_config.ProgressColumn(
+                "% +": st.column_config.ProgressColumn(
                     "Progreso FCR",
                     help="Proximidad al mejor porcentaje de FCR/CSAT Positivo",
                     format="%.2f%%",
                     min_value=0,
                     max_value=max_percentage,
                 ),
-                "% +": st.column_config.NumberColumn(
-                    "Porcentaje Positivo",
-                    format="%.2f%%",
-                )
+                "Empleado": st.column_config.TextColumn("Agente"),
+                "Cantidad +": st.column_config.NumberColumn("CSAT Positivo", format="%d")
             },
             hide_index=True
         )
 
     except gspread.WorksheetNotFound:
-        st.error(f"❌ La hoja de cálculo NO tiene una pestaña llamada 'Ranking FCR Semanal'.")
-        st.warning("Por favor, crea la pestaña con este nombre y asegúrate de que tenga las columnas A-I con datos.")
+        st.error(f"❌ La hoja de cálculo NO tiene una pestaña llamada '{worksheet_name}'.")
+        st.warning(f"Por favor, asegúrate de crear la pestaña y nombrarla exactamente: '{worksheet_name}'.")
     except Exception as e:
-        st.error(f"❌ Error al generar el Ranking FCR. ¿Están las columnas y el formato de datos correctos?: {e}")
+        st.error(f"❌ Error al generar el Ranking FCR. ¿Están las columnas correctas?: {e}")
 
 
 # --- FUNCIÓN PRINCIPAL DE LA APP ---
@@ -349,7 +341,6 @@ def show_fcr_ranking():
 st.set_page_config(page_title="Gincana Contact Center", layout="wide")
 st.title("🎯 Plataforma de Productividad del Contact Center")
 
-# Muestra la confirmación de conexión si el cliente existe
 if gsheet_client:
     st.success("✅ Conexión a Google Sheets exitosa.")
 else:
@@ -370,12 +361,40 @@ st.sidebar.title("Menú de Módulos")
 st.sidebar.markdown("---")
 
 menu_options = {
-    "⌨️ Gincana (Juego) 🛠️": show_typing_game,
-    "🏆 Ranking de Velocidad": show_typing_ranking,
-    "📈 Ranking FCR Semanal": show_fcr_ranking,
+    "⌨️ Gincana (Juego) 🛠️": "game",
+    "🏆 Ranking de Velocidad": "typing_ranking",
+    "📈 Ranking FCR Semanal": "fcr_ranking",
 }
 
 selection = st.sidebar.radio("Selecciona una sección:", list(menu_options.keys()))
+current_module = menu_options[selection]
 
-if selection in menu_options:
-    menu_options[selection]()
+if current_module == "game":
+    show_typing_game()
+    
+elif current_module == "typing_ranking":
+    show_typing_ranking()
+
+# --- Lógica del Menú Desplegable para FCR ---
+elif current_module == "fcr_ranking":
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Seleccionar Turno FCR")
+    
+    # Define las cuatro hojas de cálculo por turno
+    fcr_sheets = {
+        "Turno PM": "Ranking FCR Semanal - PM",
+        "Turno AM": "Ranking FCR Semanal - AM",
+        "Turno Noche (NT1)": "Ranking FCR Semanal - NT1",
+        "Turno Noche (NT2)": "Ranking FCR Semanal - NT2",
+    }
+    
+    # Creamos el menú de selección de turno
+    turno_selection = st.sidebar.radio(
+        "Ver Ranking del Turno:", 
+        list(fcr_sheets.keys()),
+        index=0 # Por defecto, selecciona el PM
+    )
+    
+    # Llamamos a la función de ranking con el nombre de la hoja seleccionada
+    worksheet_name = fcr_sheets[turno_selection]
+    show_fcr_ranking(worksheet_name)
