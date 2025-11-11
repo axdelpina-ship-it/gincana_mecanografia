@@ -364,11 +364,9 @@ def show_fcr_global_ranking():
             
             # Limpiar y convertir columnas clave
             if 'Total P+N' in df_turno.columns:
-                # La columna 'Total P+N' es la principal para ordenar
                 df_turno['Total P+N'] = pd.to_numeric(df_turno['Total P+N'], errors='coerce').fillna(0)
             
             if '% +' in df_turno.columns:
-                # El porcentaje '+' es el criterio de desempate
                 df_turno['% +'] = df_turno['% +'].astype(str).str.replace('%', '').str.replace(',', '.').astype(float)
                 
             df_turno['Turno'] = turno_key
@@ -386,11 +384,14 @@ def show_fcr_global_ranking():
     # Consolidar todos los DataFrames
     df_consolidado = pd.concat(all_data, ignore_index=True)
     
-    # Asegurar que solo tenemos una entrada por empleado y limpiar filas sin datos en las columnas clave
-    # Usamos groupby para tomar la mejor fila si un empleado aparece varias veces (e.g., el mismo agente hizo un cambio de turno)
-    # Aquí asumimos que queremos el mejor resultado (Total P+N más alto)
-    df_consolidado = df_consolidado.loc[df_consolidado.groupby('Empleado')['Total P+N'].idxmax()]
+    # 🚨 CORRECCIÓN CRÍTICA: Reiniciar el índice para resolver el KeyError en .loc[idxmax()]
+    df_consolidado = df_consolidado.reset_index(drop=True) 
+    
+    # Asegurar que solo tenemos una entrada por empleado (el mejor resultado)
     df_consolidado = df_consolidado.dropna(subset=['Empleado', 'Total P+N', '% +'])
+    
+    # Selecciona la fila con el 'Total P+N' máximo para cada 'Empleado'
+    df_consolidado = df_consolidado.loc[df_consolidado.groupby('Empleado')['Total P+N'].idxmax()]
     
     # 3. Ordenar el Ranking Global
     # Criterio principal: 'Total P+N' descendente. Criterio secundario (desempate): '% +' descendente
