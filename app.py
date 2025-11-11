@@ -102,6 +102,7 @@ def get_gsheet_client():
         client = gspread.authorize(creds)
         return client
     except Exception:
+        # Esto captura errores si st.secrets['gsheet_id'] no existe o las credenciales fallan
         return None
 
 gsheet_client = get_gsheet_client()
@@ -111,6 +112,7 @@ gsheet_client = get_gsheet_client()
 def calcular_metrics(texto_original, texto_escrito, tiempo_tecleo_seg, tiempo_lectura_seg):
     """Calcula WPM, precisión, RPM y errores."""
     
+    # Limpia espacios extra para la comparación
     original_limpio = re.sub(r'\s+', ' ', texto_original.strip())
     escrito_limpio = re.sub(r'\s+', ' ', texto_escrito.strip())
     
@@ -119,30 +121,37 @@ def calcular_metrics(texto_original, texto_escrito, tiempo_tecleo_seg, tiempo_le
     caracteres_correctos = 0
     caracteres_escritos = len(escrito_limpio)
     
+    # Cuenta caracteres correctos letra por letra
     for i in range(min(len(original_limpio), caracteres_escritos)):
         if original_limpio[i] == escrito_limpio[i]:
             caracteres_correctos += 1
             
+    # Los errores incluyen caracteres extra escritos (si se escribió más largo)
     errores_caracter = max(0, caracteres_escritos - caracteres_correctos) 
     
-    # WPM (Neto, Caracteres correctos / 5)
-    palabras_netas_tecleo = max(0, (caracteres_correctos - errores_caracter) / 5)
-    wpm = (palabras_netas_tecleo / (tiempo_tecleo_seg / 60))
-    wpm = max(0, round(wpm, 2))
+    # WPM (Neto: (Caracteres correctos - errores) / 5)
+    # Si el tiempo es 0, WPM es 0 para evitar división por cero.
+    if tiempo_tecleo_seg > 0:
+        palabras_netas_tecleo = max(0, (caracteres_correctos - errores_caracter) / 5)
+        wpm = (palabras_netas_tecleo / (tiempo_tecleo_seg / 60))
+        wpm = max(0, round(wpm, 2))
+    else:
+        wpm = 0.00
 
-    # Precisión
-    if len(original_limpio) > 0:
+    # Precisión (Basado en la longitud del texto original)
+    if len(original_limpio) > 0 and caracteres_escritos > 0:
+        # Se calcula en base a la coincidencia con la longitud del texto original
         precision_porcentaje = (caracteres_correctos / len(original_limpio)) * 100
         precision_porcentaje = max(0, min(100, precision_porcentaje))
     else:
-        precision_porcentaje = 0
+        precision_porcentaje = 0.00
         
     # RPM (Lectura por Minuto)
     if tiempo_lectura_seg > 0:
         rpm = (total_palabras_original / (tiempo_lectura_seg / 60))
         rpm = round(rpm, 2)
     else:
-        rpm = 0
+        rpm = 0.00
 
     return wpm, round(precision_porcentaje, 2), errores_caracter, rpm
 
@@ -167,14 +176,15 @@ def save_typing_results(results_dict):
             results_dict['Duracion Lectura (s)'],
             results_dict['RPM'],
             results_dict['Respuestas Correctas'], 
-            results_dict['Texto Escrito']
+            results_dict['Texto Escrito'] # Columna 10
         ]
         
         results_ws.append_row(row_data)
         st.session_state.guardado_exitoso = True
         
     except Exception as e:
-        st.error(f"❌ ¡ERROR al guardar los resultados! Revisa que la hoja de cálculo exista, la clave 'gsheet_id' y que las 10 cabeceras sean correctas: {e}")
+        # Muestra un error detallado si falla el guardado
+        st.error(f"❌ ¡ERROR al guardar los resultados! Revisa que la hoja de cálculo exista y el formato de las cabeceras (10 columnas): {e}")
         st.session_state.guardado_exitoso = False
 
 def reiniciar_test():
@@ -204,27 +214,32 @@ def show_typing_game():
     # ----------------------------------------
     if st.session_state.current_phase == "ID_INPUT":
         st.session_state.agente_id = st.text_input("Ingresa tu ID de Agente:", key="agente_id_input")
-        if st.button("▶️ Iniciar Lectura"):
+        if st.button("▶️ Empezar el Test (Iniciar Lectura)"): # Botón claro para empezar
             if st.session_state.agente_id:
                 st.session_state.current_phase = "READING"
-                st.session_state.start_time = time.time() 
+                st.session_state.start_time = time.time() # Inicia el cronómetro de lectura
                 st.rerun()
+            else:
+                st.warning("Por favor, ingresa tu ID de Agente para iniciar.")
 
     # ----------------------------------------
-    # FASE 2: LECTURA DEL TEXTO
+    # FASE 2: LECTURA DEL TEXTO (CRONÓMETRO DE LECTURA)
     # ----------------------------------------
     elif st.session_state.current_phase == "READING":
         st.subheader("📚 Paso 1: Lee el siguiente texto con atención")
-        st.info(TEXTO_PRUEBA_GINCANA)
-        st.warning("El tiempo de lectura está corriendo. Cuando termines de leer, haz clic en Continuar.")
+        
+        # Mensaje informativo solicitado
+        st.info("ℹ️ **Información Importante:** El tiempo de lectura ha comenzado. Debes leer con cautela, ya que el tiempo que tomes influirá en el cálculo de tus **RPM** (Palabras Leídas por Minuto).")
+        
+        st.code(TEXTO_PRUEBA_GINCANA, language="markdown") # Usa st.code para darle un estilo de bloque fijo
 
         tiempo_transcurrido = time.time() - st.session_state.start_time
-        st.caption(f"Tiempo de lectura transcurrido: **{int(tiempo_transcurrido)}** segundos.")
+        st.warning(f"⏰ Tiempo de lectura transcurrido: **{int(tiempo_transcurrido)}** segundos.")
 
         if st.button("Continúar a la Prueba de Tecleo ➡️"):
             st.session_state.reading_time = tiempo_transcurrido
             st.session_state.current_phase = "TYPING"
-            st.session_state.start_time = time.time() 
+            st.session_state.start_time = time.time() # Reinicia el cronómetro para el tecleo
             st.snow()
             st.rerun()
 
@@ -238,9 +253,14 @@ def show_typing_game():
         
         st.subheader(f"📝 Paso 2: ¡Teclea ahora, {st.session_state.agente_id}!")
         timer_placeholder = st.empty()
-        timer_placeholder.warning(f"⏳ Tiempo restante: **{int(tiempo_restante)}** segundos.")
         
-        st.info(TEXTO_PRUEBA_GINCANA)
+        # Muestra el temporizador
+        if tiempo_restante > 0:
+            timer_placeholder.warning(f"⏳ Tiempo restante: **{int(tiempo_restante)}** segundos.")
+        else:
+            timer_placeholder.error("🚨 ¡TIEMPO AGOTADO! Tu tecleo ha terminado. Presiona Continuar.")
+
+        st.code(TEXTO_PRUEBA_GINCANA, language="markdown")
 
         texto_escrito = st.text_area("Comienza a escribir aquí...", 
                                      height=200, 
@@ -250,19 +270,24 @@ def show_typing_game():
         
         st.session_state.texto_escrito = texto_escrito 
 
+        # Control del tiempo
         if tiempo_restante > 0:
             time.sleep(1)
-            st.rerun()
+            st.rerun() # Mantiene la cuenta regresiva
 
-        else:
-            st.session_state.typing_time = DURACION_SEGUNDOS
-            st.session_state.current_phase = "COMPREHENSION"
-            timer_placeholder.info("¡Tiempo Agotado! Presiona Continuar.")
+        if tiempo_restante <= 0 and 'typing_finished' not in st.session_state:
+            # Si el tiempo se acaba de agotar
+            st.session_state.typing_time = DURACION_SEGUNDOS # Fija el tiempo a 60s
+            st.session_state.typing_finished = True
             st.rerun()
-
-        if st.button("🛑 Finalizar Tecleo (Anticipado)"):
-            st.session_state.typing_time = time.time() - st.session_state.start_time
+            
+        if st.session_state.get('typing_finished', False) or st.button("🛑 Finalizar Tecleo (Anticipado)"):
+            if not st.session_state.get('typing_finished', False):
+                # Si se presiona el botón anticipado
+                st.session_state.typing_time = time.time() - st.session_state.start_time
+                
             st.session_state.current_phase = "COMPREHENSION"
+            if 'typing_finished' in st.session_state: del st.session_state['typing_finished'] # Limpia la bandera
             st.rerun()
 
     # ----------------------------------------
@@ -290,7 +315,7 @@ def show_typing_game():
             st.rerun()
 
     # ----------------------------------------
-    # FASE 5: RESULTADOS Y GUARDADO
+    # FASE 5: RESULTADOS Y GUARDADO (CÁLCULOS CORREGIDOS)
     # ----------------------------------------
     elif st.session_state.current_phase == "RESULTS":
         
@@ -587,10 +612,12 @@ def show_fcr_global_ranking():
 st.set_page_config(page_title="Plataforma de Productividad", layout="wide")
 st.title("🎯 Plataforma de Productividad del Contact Center")
 
+# Chequeo de conexión: el código es correcto, pero se mantiene la advertencia si falla el secreto
 if gsheet_client:
     st.success("✅ Conexión a Google Sheets exitosa (Solo para guardar resultados y rankings).")
 else:
-    st.error("❌ Fallo en la conexión a Google Sheets. Los resultados no se podrán guardar ni los rankings se cargarán. Revisa tus Secrets.")
+    # Este error se debe a la falta de los secretos de Streamlit (st.secrets)
+    st.error("❌ Fallo en la conexión a Google Sheets. Los resultados no se podrán guardar ni los rankings se cargarán. Revisa tus Secrets (gsheet_id y credenciales).")
 
 # Inicialización de estado global (Máquina de estados)
 if 'current_phase' not in st.session_state: reiniciar_test()
