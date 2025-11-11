@@ -27,8 +27,8 @@ def get_gsheet_client():
 # Inicializa el cliente (Solo se llama una vez al inicio)
 gsheet_client = get_gsheet_client()
 
-# NO usamos @st.cache_data aquí para evitar el UnhashableParamError
-def get_config_data(client, sheet_id):
+# FUNCIÓN MODIFICADA: Incluye "_" como argumento dummy para evitar el error UnhashableParamError
+def get_config_data(client, sheet_id, _):
     """Lee el texto y la duración de la hoja 'Configuracion'."""
     if not client:
         return "Error: Cliente de Sheets no disponible.", 60
@@ -46,8 +46,8 @@ def get_config_data(client, sheet_id):
     except Exception as e:
         return f"Error al leer la configuración de Google Sheets: {e}", 60 
 
-# Lectura global de la configuración
-TEXTO_DE_PRUEBA, DURACION_SEGUNDOS = get_config_data(gsheet_client, st.secrets["gsheet_id"])
+# LLAMADA MODIFICADA: Se pasa el cliente (gsheet_client) como tercer argumento
+TEXTO_DE_PRUEBA, DURACION_SEGUNDOS = get_config_data(gsheet_client, st.secrets["gsheet_id"], gsheet_client)
 
 # --- Funciones de Cálculo de WPM y Precisión ---
 
