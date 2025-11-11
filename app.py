@@ -11,10 +11,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 # Decorador para cachear la conexión y no reconectar en cada interacción
 @st.cache_resource
 def get_gsheet_client():
-    """
-    Conecta con Google Sheets usando los secretos de Streamlit.
-    Ajustado para leer la estructura de sección TOML plana.
-    """
+    """Conecta con Google Sheets usando los secretos de Streamlit."""
     try:
         # st.secrets.gcp_service_account lee la sección [gcp_service_account] como una tabla/diccionario
         creds_info = st.secrets.gcp_service_account 
@@ -25,24 +22,23 @@ def get_gsheet_client():
             scopes=['https://www.googleapis.com/auth/spreadsheets']
         )
         client = gspread.authorize(creds)
-        st.success("✅ Conexión a Google Sheets exitosa.")
+        #st.success("✅ Conexión a Google Sheets exitosa.")
         return client
     except Exception as e:
-        st.error(f"❌ ERROR de Conexión a Google Sheets. Revisa tus Secrets y el código: {e}")
+        #st.error(f"❌ ERROR de Conexión a Google Sheets. Revisa tus Secrets y el código: {e}")
         return None
 
-# Inicializa el cliente
+# Inicializa el cliente (Solo se llama una vez al inicio)
 gsheet_client = get_gsheet_client()
 
-def get_config_data():
+@st.cache_data(ttl=3600) # Cacha la configuración por 1 hora
+def get_config_data(client, sheet_id):
     """Lee el texto y la duración de la hoja 'Configuracion'."""
-    if not gsheet_client:
+    if not client:
         return "Error: Cliente de Sheets no disponible.", 60
 
     try:
-        # Usa el ID de la hoja guardado en secrets.toml
-        sheet = gsheet_client.open_by_key(st.secrets["gsheet_id"]) 
-        # Asegúrate de que esta pestaña exista en tu Google Sheet
+        sheet = client.open_by_key(sheet_id) 
         config_ws = sheet.worksheet("Configuracion")
         
         # Asumiendo que el texto de prueba está en la celda A2 y la duración (en segundos) en B2
@@ -52,12 +48,11 @@ def get_config_data():
         return texto, duracion_seg
         
     except Exception as e:
-        st.error(f"❌ Error al leer la configuración de Google Sheets: {e}")
-        # Valores de respaldo
-        return "No se pudo cargar el texto. Revisa la pestaña 'Configuracion' y la estructura.", 60 
+        # El error de cuota (429) a menudo aparece aquí.
+        return f"Error al leer la configuración de Google Sheets: {e}", 60 
 
-# Lectura global de la configuración
-TEXTO_DE_PRUEBA, DURACION_SEGUNDOS = get_config_data()
+# Lectura global de la configuración (Solo se ejecuta una vez por sesión o al expirar la caché)
+TEXTO_DE_PRUEBA, DURACION_SEGUNDOS = get_config_data(gsheet_client, st.secrets["gsheet_id"])
 
 # --- Funciones de Cálculo de WPM y Precisión ---
 
@@ -92,16 +87,17 @@ def calcular_wpm_y_precision(texto_original, texto_escrito, tiempo_transcurrido_
 # --- Función de Escritura de Resultados ---
 
 def save_typing_results(results_dict):
-    """Guarda los resultados de la prueba en la hoja 'Resultados Brutos'."""
-    if not gsheet_client: return
+    """Guarda los resultados de la prueba en la hoja 'Resultados Brutos' (Solo se llama una vez)."""
+    client = get_gsheet_client()
+    if not client: 
+        st.error("No se pudo guardar: Cliente de Sheets no disponible.")
+        return
 
     try:
-        sheet = gsheet_client.open_by_key(st.secrets["gsheet_id"])
-        # Asegúrate de que esta pestaña exista: "Resultados Brutos"
+        sheet = client.open_by_key(st.secrets["gsheet_id"])
         results_ws = sheet.worksheet("Resultados Brutos") 
         
-        # El orden de las columnas debe coincidir con los encabezados de tu hoja:
-        # Fecha/Hora, ID Agente, WPM, Precisión (%), Errores, Duracion (s), Texto Escrito
+        # El orden de las columnas debe coincidir con los encabezados de tu hoja
         row_data = [
             results_dict['Fecha/Hora'],
             results_dict['ID Agente'],
@@ -126,6 +122,12 @@ def show_typing_game():
     st.header("⌨️ Gincana de Mecanografía")
     st.markdown("---")
 
+    # Muestra el error de configuración si existe
+    if TEXTO_DE_PRUEBA.startswith("Error"):
+        st.error(TEXTO_DE_PRUEBA)
+        st.warning("No se puede iniciar la prueba sin el texto de configuración.")
+        return
+
     # Input de ID de Agente
     agente_id = st.text_input("Ingresa tu ID de Agente:", key="agente_id_input")
 
@@ -140,11 +142,20 @@ def show_typing_game():
                 st.session_state.started = True
                 st.session_state.start_time = time.time()
                 st.session_state.finished = False
+                st.session_state.texto_escrito = "" # Inicializar texto escrito
                 st.rerun()
 
     elif st.session_state.started and not st.session_state.finished:
         st.subheader(f"¡Teclea ahora, {agente_id}!")
-        texto_escrito = st.text_area("Comienza a escribir aquí...", height=200, key="typing_area")
+        
+        # Usamos session_state para mantener el texto escrito
+        texto_escrito = st.text_area("Comienza a escribir aquí...", 
+                                     height=200, 
+                                     key="typing_area", 
+                                     value=st.session_state.texto_escrito)
+        
+        # Sincronizamos el session_state para que persista el texto
+        st.session_state.texto_escrito = texto_escrito 
 
         tiempo_transcurrido = time.time() - st.session_state.start_time
         tiempo_restante = DURACION_SEGUNDOS - tiempo_transcurrido
@@ -154,11 +165,17 @@ def show_typing_game():
         
         if tiempo_restante > 0:
             timer_placeholder.warning(f"⏳ Tiempo restante: **{int(tiempo_restante)}** segundos.")
-            # Ejecutar de nuevo para actualizar el tiempo
-            if tiempo_restante > 0:
-                time.sleep(0.1)
-                st.rerun()
+            
+            # --- Ajuste Anti-Cuota (429) ---
+            # Esperamos 1 segundo antes de forzar el rerun para actualizar el timer.
+            # Esto reduce las llamadas a la API 10 veces, evitando el error de cuota.
+            if int(tiempo_restante) > 0:
+                time.sleep(1)
+                st.rerun()    
+            # -------------------------------
+
         else:
+            # Lógica de finalización por tiempo agotado
             tiempo_final = DURACION_SEGUNDOS
             st.session_state.finished = True
             timer_placeholder.info("¡Tiempo Agotado! Calculando resultados...")
@@ -178,7 +195,7 @@ def show_typing_game():
                 'Duracion (s)': tiempo_final,
                 'Texto Escrito': texto_escrito 
             }
-            save_typing_results(st.session_state.results)
+            save_typing_results(st.session_state.results) # GUARDA SÓLO UNA VEZ
             st.rerun()
 
         if st.button("🛑 Finalizar Prueba (Anticipada)"):
@@ -202,7 +219,7 @@ def show_typing_game():
                 'Duracion (s)': round(tiempo_final, 2),
                 'Texto Escrito': texto_escrito
             }
-            save_typing_results(st.session_state.results)
+            save_typing_results(st.session_state.results) # GUARDA SÓLO UNA VEZ
             st.rerun()
 
     # 3. Área de Resultados (Finalizado)
@@ -219,6 +236,7 @@ def show_typing_game():
             st.session_state.started = False
             st.session_state.finished = False
             st.session_state.results = None
+            st.session_state.texto_escrito = ""
             st.rerun()
 
 def show_typing_ranking():
@@ -226,13 +244,14 @@ def show_typing_ranking():
     st.header("🏆 Ranking de Velocidad (WPM)")
     st.markdown("---")
     
-    if not gsheet_client:
+    client = get_gsheet_client()
+    if not client:
         st.error("No se pudo conectar a Google Sheets para el ranking.")
         return
 
     try:
         # Lee la hoja de resultados brutos
-        sheet = gsheet_client.open_by_key(st.secrets["gsheet_id"]) 
+        sheet = client.open_by_key(st.secrets["gsheet_id"]) 
         results_ws = sheet.worksheet("Resultados Brutos")
         
         # Obtiene todos los registros
@@ -244,7 +263,6 @@ def show_typing_ranking():
             return
 
         # Lógica para encontrar el mejor WPM por agente
-        # Convertir WPM a numérico (puede venir como string)
         df['WPM'] = pd.to_numeric(df['WPM'], errors='coerce')
         
         # Agrupar y encontrar la fila con el WPM máximo para cada agente
@@ -281,10 +299,17 @@ def show_fcr_ranking():
 st.set_page_config(page_title="Gincana Contact Center", layout="wide")
 st.title("🎯 Plataforma de Productividad del Contact Center")
 
+# Muestra la confirmación de conexión si el cliente existe
+if gsheet_client:
+    st.success("✅ Conexión a Google Sheets exitosa.")
+else:
+    st.error("❌ Fallo en la conexión a Google Sheets. Revisa los Secrets.")
+
 # Inicialización de estado global
 if 'started' not in st.session_state: st.session_state.started = False
 if 'finished' not in st.session_state: st.session_state.finished = False
 if 'results' not in st.session_state: st.session_state.results = None
+if 'texto_escrito' not in st.session_state: st.session_state.texto_escrito = ""
 
 # --- BARRA DE NAVEGACIÓN LATERAL ---
 
