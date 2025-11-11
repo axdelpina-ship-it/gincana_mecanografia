@@ -36,7 +36,7 @@ PREGUNTAS_COMPRENSION = [
     }
 ]
 
-# --- CSS PERSONALIZADO (CLEAN & PROFESIONAL SIN GLASSMORFISM) ---
+# --- CSS PERSONALIZADO (CLEAN & PROFESIONAL con BARRA LATERAL CLARA) ---
 st.markdown("""
 <style>
     /* 1. FUENTE GLOBAL */
@@ -44,12 +44,11 @@ st.markdown("""
         font-family: 'Roboto', sans-serif;
     }
 
-    /* 2. ESTILO BARRA LATERAL (CORREGIDO Y SÓLIDO) */
+    /* 2. ESTILO BARRA LATERAL (FORZADO a color claro para visibilidad) */
     [data-testid="stSidebar"] {
-        /* Usamos el secondaryBackgroundColor definido en config.toml para asegurar legibilidad */
-        background-color: #1E222A; 
-        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5); /* Sombra sutil y profesional */
-        /* Eliminado: backdrop-filter, border y otros estilos de Glassmorphism */
+        /* Color gris claro para asegurar alto contraste con el texto del menú */
+        background-color: #F0F2F6; 
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5); 
     }
 
     /* 3. ESTILO PARA LAS TARJETAS METRIC (st.metric) */
