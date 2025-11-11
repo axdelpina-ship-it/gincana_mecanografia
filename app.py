@@ -94,6 +94,25 @@ st.markdown("""
         color: #FFFFFF;
         white-space: pre-wrap; /* Asegura saltos de línea y buen formato */
     }
+    
+    /* 5. RESTRICCIÓN COPIAR/PEGAR para la gincana */
+    .no-copy-paste textarea {
+        user-select: none; /* Deshabilita la selección de texto */
+        -moz-user-select: none;
+        -webkit-user-select: none;
+        -ms-user-select: none;
+        
+        /* Deshabilita el menú contextual (clic derecho) */
+        pointer-events: auto !important;
+    }
+    .no-copy-paste textarea:focus {
+        /* Deshabilita Ctrl/Cmd + C, V, X, A */
+        -webkit-user-modify: read-write-plaintext-only !important;
+    }
+    /* Asegura que el contenedor de Streamlit tenga el tamaño correcto */
+    .no-copy-paste > div {
+        height: 100%;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -291,7 +310,7 @@ def show_typing_game():
 
 
     # ----------------------------------------
-    # FASE 3: TECLEO (JUEGO CON DISTRACCIÓN)
+    # FASE 3: TECLEO (JUEGO CON DISTRACCIÓN Y RESTRICCIÓN DE PEGADO)
     # ----------------------------------------
     elif st.session_state.current_phase == "TYPING":
         
@@ -318,11 +337,17 @@ def show_typing_game():
 
         st.markdown(f'<div class="typing-text">{TEXTO_PRUEBA_GINCANA}</div>', unsafe_allow_html=True)
 
-        texto_escrito = st.text_area("Comienza a escribir aquí...", 
-                                     height=200, 
-                                     key="typing_area", 
-                                     value=st.session_state.texto_escrito,
-                                     disabled=tiempo_restante <= 0)
+        # --- APLICACIÓN DE RESTRICCIÓN DE COPIAR/PEGAR ---
+        with st.container():
+            # El div aplica la clase CSS 'no-copy-paste'
+            st.markdown('<div class="no-copy-paste">', unsafe_allow_html=True)
+            texto_escrito = st.text_area("Comienza a escribir aquí...", 
+                                         height=200, 
+                                         key="typing_area", 
+                                         value=st.session_state.texto_escrito,
+                                         disabled=tiempo_restante <= 0)
+            st.markdown('</div>', unsafe_allow_html=True)
+        # --------------------------------------------------
         
         st.session_state.texto_escrito = texto_escrito # Mantiene el valor actualizado para la visualización
 
