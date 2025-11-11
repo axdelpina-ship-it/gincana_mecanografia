@@ -45,36 +45,12 @@ st.markdown("""
         background-color: rgba(255, 255, 255, 0.05);
         border-radius: 5px;
     }
-
-    /* 4. ESTILO DEL TÍTULO GLOBAL (Neón/Glow) */
-    .global-title {
-        font-size: 3em; 
-        font-weight: 900; 
-        letter-spacing: 3px; 
-        
-        /* Degradado Azul/Púrpura vibrante */
-        background: linear-gradient(90deg, #6A5ACD, #00BFFF); 
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        display: inline-block; 
-        padding-bottom: 10px;
-        
-        /* Sombra por defecto */
-        text-shadow: 0 0 5px rgba(106, 90, 205, 0.5), 0 0 10px rgba(0, 191, 255, 0.5);
-        transition: text-shadow 0.3s ease-in-out; /* Transición suave */
-    }
-    
-    /* 5. HOVER EFFECT (Efecto de brillo neón al pasar el mouse) */
-    .global-title:hover {
-        text-shadow: 0 0 10px #6A5ACD, 0 0 20px #00BFFF, 0 0 30px #6A5ACD;
-        cursor: pointer; /* Indicar que es interactivo */
-    }
     
 </style>
 """, unsafe_allow_html=True)
 
 
-# --- CONFIGURACIÓN Y CONEXIÓN A GOOGLE SHEETS ---
+# --- CONFIGURACIÓN Y CONEXIÓN A GOOGLE SHEETS (Mantenido) ---
 
 @st.cache_resource
 def get_gsheet_client():
@@ -120,7 +96,7 @@ try:
 except KeyError:
     TEXTO_DE_PRUEBA, DURACION_SEGUNDOS = "Error: Falta la clave 'gsheet_id' en Streamlit Secrets.", 60
 
-# --- Funciones de Cálculo y Guardado ---
+# --- Funciones de Cálculo y Guardado (Mantenidas) ---
 
 def calcular_wpm_y_precision(texto_original, texto_escrito, tiempo_transcurrido_seg):
     """Calcula WPM y la precisión de la prueba."""
@@ -179,7 +155,7 @@ def save_typing_results(results_dict):
         st.session_state.guardado_exitoso = False
 
 
-# --- MÓDULOS DE NAVEGACIÓN ---
+# --- MÓDULOS DE NAVEGACIÓN (Mantenidos) ---
 
 def show_typing_game():
     """Módulo principal: La interfaz de la Gincana de Mecanografía."""
@@ -413,12 +389,8 @@ def show_fcr_ranking(worksheet_name):
 def show_fcr_global_ranking():
     """Consolida datos de todos los turnos, calcula el TOP 10 global y muestra las métricas."""
     
-    # ⭐ TÍTULO ESTILIZADO CON CLASE CSS .global-title
-    st.markdown("""
-        <div class='global-title'>
-        👑 TOP 10 GLOBAL FCR/CSAT
-        </div>
-    """, unsafe_allow_html=True)
+    # Revertido a un Título Estándar
+    st.header("👑 TOP 10 Global FCR/CSAT") 
     
     st.markdown("---")
     
@@ -555,7 +527,7 @@ def show_fcr_global_ranking():
     )
 
 
-# --- FUNCIÓN PRINCIPAL DE LA APP ---
+# --- FUNCIÓN PRINCIPAL DE LA APP (Mantenida) ---
 
 # Configuración de página con layout extendido
 st.set_page_config(page_title="Gincana Contact Center", layout="wide")
@@ -575,7 +547,7 @@ if 'saving' not in st.session_state: st.session_state.saving = False
 if 'guardado_exitoso' not in st.session_state: st.session_state.guardado_exitoso = False
 
 
-# --- BARRA DE NAVEGACIÓN LATERAL ---
+# --- BARRA DE NAVEGACIÓN LATERAL (Mantenida) ---
 
 st.sidebar.title("Menú de Módulos")
 st.sidebar.markdown("---")
