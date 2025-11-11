@@ -1,26 +1,74 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 import time
 import re
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
-# --- CONFIGURACIÓN DE LA PRUEBA (Estos datos vendrán de Google Sheets al final) ---
-TEXTO_DE_PRUEBA = "Reducir el porcentaje de No-FCR atribuible al Ejecutivo de 8,32% a 7% mediante la aplicación de Gincana de mecanografía y un ranking visible que incentiva la resolución de calidad con CSAT positivo."
-DURACION_SEGUNDOS = 60 # Ejemplo: 60 segundos (1 minuto)
+# --- CONFIGURACIÓN Y CONEXIÓN A GOOGLE SHEETS ---
 
-# --- Funciones de Cálculo ---
+# Decorador para cachear la conexión y no reconectar en cada interacción
+@st.cache_resource
+def get_gsheet_client():
+    """
+    Conecta con Google Sheets usando los secretos de Streamlit.
+    Ajustado para leer la estructura de sección TOML plana.
+    """
+    try:
+        # st.secrets.gcp_service_account lee la sección [gcp_service_account] como una tabla/diccionario
+        creds_info = st.secrets.gcp_service_account 
+        
+        # Convertimos la tabla TOML a un diccionario estándar para el cliente gspread
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(
+            dict(creds_info), 
+            scopes=['https://www.googleapis.com/auth/spreadsheets']
+        )
+        client = gspread.authorize(creds)
+        st.success("✅ Conexión a Google Sheets exitosa.")
+        return client
+    except Exception as e:
+        st.error(f"❌ ERROR de Conexión a Google Sheets. Revisa tus Secrets y el código: {e}")
+        return None
+
+# Inicializa el cliente
+gsheet_client = get_gsheet_client()
+
+def get_config_data():
+    """Lee el texto y la duración de la hoja 'Configuracion'."""
+    if not gsheet_client:
+        return "Error: Cliente de Sheets no disponible.", 60
+
+    try:
+        # Usa el ID de la hoja guardado en secrets.toml
+        sheet = gsheet_client.open_by_key(st.secrets["gsheet_id"]) 
+        # Asegúrate de que esta pestaña exista en tu Google Sheet
+        config_ws = sheet.worksheet("Configuracion")
+        
+        # Asumiendo que el texto de prueba está en la celda A2 y la duración (en segundos) en B2
+        texto = config_ws.acell('A2').value
+        duracion_seg = int(config_ws.acell('B2').value)
+        
+        return texto, duracion_seg
+        
+    except Exception as e:
+        st.error(f"❌ Error al leer la configuración de Google Sheets: {e}")
+        # Valores de respaldo
+        return "No se pudo cargar el texto. Revisa la pestaña 'Configuracion' y la estructura.", 60 
+
+# Lectura global de la configuración
+TEXTO_DE_PRUEBA, DURACION_SEGUNDOS = get_config_data()
+
+# --- Funciones de Cálculo de WPM y Precisión ---
 
 def calcular_wpm_y_precision(texto_original, texto_escrito, tiempo_transcurrido_seg):
     """Calcula WPM y la precisión de la prueba."""
-    
-    # Normalizar el texto (importante para la precisión)
     original_limpio = re.sub(r'\s+', ' ', texto_original.strip())
     escrito_limpio = re.sub(r'\s+', ' ', texto_escrito.strip())
     
     caracteres_correctos = 0
     caracteres_totales = len(escrito_limpio)
     
-    # Comparar carácter a carácter hasta la longitud del texto escrito
     for i in range(min(len(original_limpio), caracteres_totales)):
         if original_limpio[i] == escrito_limpio[i]:
             caracteres_correctos += 1
@@ -28,13 +76,11 @@ def calcular_wpm_y_precision(texto_original, texto_escrito, tiempo_transcurrido_
     errores_caracter = caracteres_totales - caracteres_correctos
     
     if len(original_limpio) > 0:
-        # Precisión basada en la comparación con el texto original
         precision_porcentaje = (caracteres_correctos / len(original_limpio)) * 100
         precision_porcentaje = max(0, min(100, precision_porcentaje))
     else:
         precision_porcentaje = 0
 
-    # Cálculo de WPM: (Caracteres Netos / 5) / Tiempo en Minutos
     caracteres_netos = caracteres_correctos - errores_caracter
     palabras_netas = max(0, caracteres_netos / 5) 
     
@@ -42,6 +88,36 @@ def calcular_wpm_y_precision(texto_original, texto_escrito, tiempo_transcurrido_
     wpm = max(0, wpm)
 
     return wpm, precision_porcentaje, errores_caracter
+
+# --- Función de Escritura de Resultados ---
+
+def save_typing_results(results_dict):
+    """Guarda los resultados de la prueba en la hoja 'Resultados Brutos'."""
+    if not gsheet_client: return
+
+    try:
+        sheet = gsheet_client.open_by_key(st.secrets["gsheet_id"])
+        # Asegúrate de que esta pestaña exista: "Resultados Brutos"
+        results_ws = sheet.worksheet("Resultados Brutos") 
+        
+        # El orden de las columnas debe coincidir con los encabezados de tu hoja:
+        # Fecha/Hora, ID Agente, WPM, Precisión (%), Errores, Duracion (s), Texto Escrito
+        row_data = [
+            results_dict['Fecha/Hora'],
+            results_dict['ID Agente'],
+            results_dict['WPM'],
+            results_dict['Precisión (%)'],
+            results_dict['Errores'],
+            results_dict['Duracion (s)'],
+            results_dict['Texto Escrito']
+        ]
+        
+        results_ws.append_row(row_data)
+        st.success("✅ ¡Tu resultado se ha guardado automáticamente en Google Sheets!")
+        
+    except Exception as e:
+        st.error(f"❌ ¡ERROR al guardar los resultados! Revisa la hoja 'Resultados Brutos': {e}")
+
 
 # --- MÓDULOS DE NAVEGACIÓN ---
 
@@ -59,8 +135,7 @@ def show_typing_game():
 
     # 2. Lógica del Juego
     if not st.session_state.started:
-        # Botón de inicio
-        if st.button(f"🚀 Iniciar Gincana ({DURACION_SEGUNDOS // 60} Minuto)", disabled=not agente_id):
+        if st.button(f"🚀 Iniciar Gincana ({DURACION_SEGUNDOS} Segundos)", disabled=not agente_id):
             if agente_id:
                 st.session_state.started = True
                 st.session_state.start_time = time.time()
@@ -68,25 +143,25 @@ def show_typing_game():
                 st.rerun()
 
     elif st.session_state.started and not st.session_state.finished:
-        # --- Interfaz de la Prueba en Curso ---
-        
         st.subheader(f"¡Teclea ahora, {agente_id}!")
-        
-        # Campo de texto para la entrada del agente
         texto_escrito = st.text_area("Comienza a escribir aquí...", height=200, key="typing_area")
 
-        # Temporizador
         tiempo_transcurrido = time.time() - st.session_state.start_time
         tiempo_restante = DURACION_SEGUNDOS - tiempo_transcurrido
         
+        # Placeholder para el contador de tiempo
+        timer_placeholder = st.empty()
+        
         if tiempo_restante > 0:
-            st.warning(f"⏳ Tiempo restante: **{int(tiempo_restante)}** segundos.")
+            timer_placeholder.warning(f"⏳ Tiempo restante: **{int(tiempo_restante)}** segundos.")
+            # Ejecutar de nuevo para actualizar el tiempo
+            if tiempo_restante > 0:
+                time.sleep(0.1)
+                st.rerun()
         else:
-            # Fin automático del tiempo
             tiempo_final = DURACION_SEGUNDOS
             st.session_state.finished = True
-            st.session_state.end_time = st.session_state.start_time + DURACION_SEGUNDOS
-            st.info("¡Tiempo Agotado! Calculando resultados...")
+            timer_placeholder.info("¡Tiempo Agotado! Calculando resultados...")
             
             wpm, precision, errores = calcular_wpm_y_precision(
                 TEXTO_DE_PRUEBA, 
@@ -101,15 +176,14 @@ def show_typing_game():
                 'Precisión (%)': round(precision, 2),
                 'Errores': errores,
                 'Duracion (s)': tiempo_final,
-                'Texto Escrito': texto_escrito # Para auditoría
+                'Texto Escrito': texto_escrito 
             }
-            # PENDIENTE: Llamada a la función de guardado en Google Sheets
+            save_typing_results(st.session_state.results)
             st.rerun()
 
-        # Botón de finalización anticipada
         if st.button("🛑 Finalizar Prueba (Anticipada)"):
             tiempo_final = time.time() - st.session_state.start_time
-            if tiempo_final == 0: tiempo_final = 1 # Evitar división por cero
+            if tiempo_final == 0: tiempo_final = 1
                  
             st.session_state.finished = True
             
@@ -128,7 +202,7 @@ def show_typing_game():
                 'Duracion (s)': round(tiempo_final, 2),
                 'Texto Escrito': texto_escrito
             }
-            # PENDIENTE: Llamada a la función de guardado en Google Sheets
+            save_typing_results(st.session_state.results)
             st.rerun()
 
     # 3. Área de Resultados (Finalizado)
@@ -141,39 +215,73 @@ def show_typing_game():
         col2.metric("Precisión", f"{st.session_state.results['Precisión (%)']:.2f}%")
         col3.metric("Errores", f"{st.session_state.results['Errores']}")
 
-        st.markdown("---")
-        st.info("✅ Resultados listos para ser enviados a Google Sheets.")
-        
-        # Botón para nueva prueba
         if st.button("🔁 Iniciar Nueva Prueba"):
             st.session_state.started = False
             st.session_state.finished = False
             st.session_state.results = None
-            # No limpiamos el ID del agente para que no tenga que escribirlo de nuevo
             st.rerun()
 
 def show_typing_ranking():
     """Módulo: Ranking de la Prueba de Velocidad."""
     st.header("🏆 Ranking de Velocidad (WPM)")
     st.markdown("---")
-    st.warning("⚠️ **Pendiente:** Conexión a Google Sheets para mostrar datos.")
     
-    # Aquí irá el código que lee la Hoja 'Ranking Consolidado' y muestra el TOP 3
+    if not gsheet_client:
+        st.error("No se pudo conectar a Google Sheets para el ranking.")
+        return
+
+    try:
+        # Lee la hoja de resultados brutos
+        sheet = gsheet_client.open_by_key(st.secrets["gsheet_id"]) 
+        results_ws = sheet.worksheet("Resultados Brutos")
+        
+        # Obtiene todos los registros
+        data = results_ws.get_all_records()
+        df = pd.DataFrame(data)
+
+        if df.empty:
+            st.info("Aún no hay resultados de la gincana para mostrar.")
+            return
+
+        # Lógica para encontrar el mejor WPM por agente
+        # Convertir WPM a numérico (puede venir como string)
+        df['WPM'] = pd.to_numeric(df['WPM'], errors='coerce')
+        
+        # Agrupar y encontrar la fila con el WPM máximo para cada agente
+        idx = df.groupby(['ID Agente'])['WPM'].transform(max) == df['WPM']
+        ranking_consolidado = df[idx].sort_values(by='WPM', ascending=False)
+        
+        st.subheader("Mejores Resultados Históricos")
+        st.dataframe(ranking_consolidado[['ID Agente', 'WPM', 'Precisión (%)', 'Fecha/Hora']], hide_index=True)
+
+        st.markdown("---")
+        st.subheader("TOP 3")
+        
+        # Formateo visual del TOP 3
+        top3 = ranking_consolidado.head(3).reset_index(drop=True)
+        if not top3.empty:
+            st.metric("🥇 Primer Lugar", f"{top3.loc[0, 'ID Agente']} con {top3.loc[0, 'WPM']} WPM")
+        if len(top3) > 1:
+            st.metric("🥈 Segundo Lugar", f"{top3.loc[1, 'ID Agente']} con {top3.loc[1, 'WPM']} WPM")
+        if len(top3) > 2:
+            st.metric("🥉 Tercer Lugar", f"{top3.loc[2, 'ID Agente']} con {top3.loc[2, 'WPM']} WPM")
+
+    except Exception as e:
+        st.error(f"❌ Error al generar el ranking: {e}. ¿Están las columnas correctas?")
+
 
 def show_fcr_ranking():
     """Módulo: Ranking Semanal de FCR."""
     st.header("📈 Ranking FCR Semanal")
     st.markdown("---")
-    st.warning("⚠️ **Pendiente:** Conexión a Google Sheets para mostrar datos.")
-    
-    # Aquí irá el código que lee los datos de FCR y muestra el ranking semanal
+    st.warning("⚠️ **Pendiente de Datos:** Este ranking necesita que conectes una pestaña o fuente con datos semanales de FCR.")
     
 # --- FUNCIÓN PRINCIPAL DE LA APP ---
 
 st.set_page_config(page_title="Gincana Contact Center", layout="wide")
 st.title("🎯 Plataforma de Productividad del Contact Center")
 
-# Inicialización de estado global (asegura que las variables existan)
+# Inicialización de estado global
 if 'started' not in st.session_state: st.session_state.started = False
 if 'finished' not in st.session_state: st.session_state.finished = False
 if 'results' not in st.session_state: st.session_state.results = None
@@ -183,16 +291,13 @@ if 'results' not in st.session_state: st.session_state.results = None
 st.sidebar.title("Menú de Módulos")
 st.sidebar.markdown("---")
 
-# Opciones con íconos
 menu_options = {
     "⌨️ Gincana (Juego)": show_typing_game,
     "🏆 Ranking de Velocidad": show_typing_ranking,
     "📈 Ranking FCR Semanal": show_fcr_ranking,
 }
 
-# Selector de opciones
 selection = st.sidebar.radio("Selecciona una sección:", list(menu_options.keys()))
 
-# Ejecutar la función seleccionada
 if selection in menu_options:
     menu_options[selection]()
