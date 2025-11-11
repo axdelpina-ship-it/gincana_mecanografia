@@ -8,30 +8,26 @@ from oauth2client.service_account import ServiceAccountCredentials
 
 # --- CONFIGURACIÓN Y CONEXIÓN A GOOGLE SHEETS ---
 
-# Decorador para cachear la conexión y no reconectar en cada interacción
+# Decorador para cachear la conexión del cliente (recurso)
 @st.cache_resource
 def get_gsheet_client():
     """Conecta con Google Sheets usando los secretos de Streamlit."""
     try:
-        # st.secrets.gcp_service_account lee la sección [gcp_service_account] como una tabla/diccionario
         creds_info = st.secrets.gcp_service_account 
         
-        # Convertimos la tabla TOML a un diccionario estándar para el cliente gspread
         creds = ServiceAccountCredentials.from_json_keyfile_dict(
             dict(creds_info), 
             scopes=['https://www.googleapis.com/auth/spreadsheets']
         )
         client = gspread.authorize(creds)
-        #st.success("✅ Conexión a Google Sheets exitosa.")
         return client
     except Exception as e:
-        #st.error(f"❌ ERROR de Conexión a Google Sheets. Revisa tus Secrets y el código: {e}")
         return None
 
 # Inicializa el cliente (Solo se llama una vez al inicio)
 gsheet_client = get_gsheet_client()
 
-@st.cache_data(ttl=3600) # Cacha la configuración por 1 hora
+# NO usamos @st.cache_data aquí para evitar el UnhashableParamError
 def get_config_data(client, sheet_id):
     """Lee el texto y la duración de la hoja 'Configuracion'."""
     if not client:
@@ -48,10 +44,9 @@ def get_config_data(client, sheet_id):
         return texto, duracion_seg
         
     except Exception as e:
-        # El error de cuota (429) a menudo aparece aquí.
         return f"Error al leer la configuración de Google Sheets: {e}", 60 
 
-# Lectura global de la configuración (Solo se ejecuta una vez por sesión o al expirar la caché)
+# Lectura global de la configuración
 TEXTO_DE_PRUEBA, DURACION_SEGUNDOS = get_config_data(gsheet_client, st.secrets["gsheet_id"])
 
 # --- Funciones de Cálculo de WPM y Precisión ---
@@ -168,7 +163,6 @@ def show_typing_game():
             
             # --- Ajuste Anti-Cuota (429) ---
             # Esperamos 1 segundo antes de forzar el rerun para actualizar el timer.
-            # Esto reduce las llamadas a la API 10 veces, evitando el error de cuota.
             if int(tiempo_restante) > 0:
                 time.sleep(1)
                 st.rerun()    
