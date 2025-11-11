@@ -95,24 +95,7 @@ st.markdown("""
         white-space: pre-wrap; /* Asegura saltos de línea y buen formato */
     }
     
-    /* 5. RESTRICCIÓN COPIAR/PEGAR para la gincana */
-    .no-copy-paste textarea {
-        user-select: none; /* Deshabilita la selección de texto */
-        -moz-user-select: none;
-        -webkit-user-select: none;
-        -ms-user-select: none;
-        
-        /* Deshabilita el menú contextual (clic derecho) */
-        pointer-events: auto !important;
-    }
-    .no-copy-paste textarea:focus {
-        /* Deshabilita Ctrl/Cmd + C, V, X, A */
-        -webkit-user-modify: read-write-plaintext-only !important;
-    }
-    /* Asegura que el contenedor de Streamlit tenga el tamaño correcto */
-    .no-copy-paste > div {
-        height: 100%;
-    }
+    /* Nota: Se eliminó el CSS de restricción de copy/paste ya que se usará JavaScript */
 </style>
 """, unsafe_allow_html=True)
 
@@ -336,18 +319,42 @@ def show_typing_game():
             timer_placeholder.error("🚨 ¡TIEMPO AGOTADO! Tu tecleo ha terminado. Presiona Continuar.")
 
         st.markdown(f'<div class="typing-text">{TEXTO_PRUEBA_GINCANA}</div>', unsafe_allow_html=True)
+        
+        # --- RESTRICCIÓN DE PEGADO CON JAVASCRIPT ---
+        js_code = """
+        <script>
+            function disablePasteAndContextMenu() {
+                // Selecciona el área de texto por su data-testid
+                const textarea = document.querySelector('[data-testid="stTextarea"] textarea');
+                if (textarea) {
+                    // Deshabilitar la acción de Pegar (Ctrl+V / Cmd+V), Copiar, Cortar
+                    textarea.onkeydown = (event) => {
+                        const isCtrlOrCmd = event.ctrlKey || event.metaKey;
+                        const key = event.key.toLowerCase();
+                        
+                        // Bloquea Pegar (v), Copiar (c), y Cortar (x)
+                        if (isCtrlOrCmd && (key === 'v' || key === 'c' || key === 'x')) {
+                            event.preventDefault();
+                        }
+                    };
+                    // Deshabilitar el menú contextual (clic derecho)
+                    textarea.oncontextmenu = (event) => {
+                        event.preventDefault();
+                    };
+                }
+            }
+            // Ejecutar la función después de un pequeño retraso para asegurar que el DOM cargue
+            setTimeout(disablePasteAndContextMenu, 1000);
+        </script>
+        """
+        st.markdown(js_code, unsafe_allow_html=True)
+        # ---------------------------------------------
 
-        # --- APLICACIÓN DE RESTRICCIÓN DE COPIAR/PEGAR ---
-        with st.container():
-            # El div aplica la clase CSS 'no-copy-paste'
-            st.markdown('<div class="no-copy-paste">', unsafe_allow_html=True)
-            texto_escrito = st.text_area("Comienza a escribir aquí...", 
-                                         height=200, 
-                                         key="typing_area", 
-                                         value=st.session_state.texto_escrito,
-                                         disabled=tiempo_restante <= 0)
-            st.markdown('</div>', unsafe_allow_html=True)
-        # --------------------------------------------------
+        texto_escrito = st.text_area("Comienza a escribir aquí... (No se permite Copiar/Pegar) 👇", 
+                                     height=200, 
+                                     key="typing_area", 
+                                     value=st.session_state.texto_escrito,
+                                     disabled=tiempo_restante <= 0)
         
         st.session_state.texto_escrito = texto_escrito # Mantiene el valor actualizado para la visualización
 
@@ -361,7 +368,8 @@ def show_typing_game():
             st.session_state.typing_finished = True
             st.rerun()
             
-        if st.session_state.get('typing_finished', False) or st.button("🛑 Finalizar Tecleo (Anticipado) y Continuar"):
+        # El botón de finalización ahora es más claro
+        if st.session_state.get('typing_finished', False) or st.button("✅ Terminé de Teclear y Continuar (Para usuarios rápidos)"): 
             
             # SOLUCIÓN: CAPTURAR EL VALOR FINAL DEL TEXT AREA POR SU KEY ANTES DE LA TRANSICIÓN
             if 'typing_area' in st.session_state:
