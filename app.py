@@ -1,7 +1,57 @@
+import streamlit as st
+import random
+import time
+from datetime import datetime
+
+st.set_page_config(page_title="Gincana de Mecanografía", layout="centered")
+st.title("🏎️ Gincana de Mecanografía")
+
+# -----------------------
+# Configuración inicial
+# -----------------------
+if 'history' not in st.session_state:
+    st.session_state['history'] = []
+
+if 'start_time' not in st.session_state:
+    st.session_state['start_time'] = None
+
+# Usuario
+user_name = st.text_input("Ingresa tu nombre o alias:")
+
+# Lista de frases
+phrases = [
+    "hola mundo",
+    "python es divertido",
+    "streamlit facilita apps web",
+    "escribe rápido y preciso",
+    "gincana de mecanografía",
+    "mejorando la velocidad de escritura",
+    "practica diaria trae resultados",
+    "cada letra cuenta para la precisión"
+]
+
+# -----------------------
+# Selección de frase
+# -----------------------
+if 'target_phrase' not in st.session_state:
+    st.session_state['target_phrase'] = random.choice(phrases)
+
+st.subheader("Frase a escribir:")
+st.code(st.session_state['target_phrase'])
+
 # Entrada del usuario con key para poder resetear
 user_input = st.text_input("Tu escritura:", key="user_input")
 
-# Botón Finalizar
+# -----------------------
+# Botones de control
+# -----------------------
+col1, col2 = st.columns(2)
+
+with col1:
+    if st.button("Comenzar"):
+        st.session_state['start_time'] = time.time()
+        st.success("¡Tiempo iniciado! Escribe la frase y presiona 'Finalizar'")
+
 with col2:
     if st.button("Finalizar"):
         if st.session_state['start_time'] is None:
@@ -40,3 +90,10 @@ with col2:
             st.session_state['target_phrase'] = random.choice(phrases)
             st.session_state['start_time'] = None
             st.session_state['user_input'] = ""  # resetea input sin rerun
+
+# -----------------------
+# Historial de la sesión
+# -----------------------
+if st.session_state['history']:
+    st.subheader("📊 Historial de intentos")
+    st.table(st.session_state['history'])
