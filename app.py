@@ -36,7 +36,7 @@ PREGUNTAS_COMPRENSION = [
     }
 ]
 
-# --- CSS PERSONALIZADO (CLEAN & PROFESIONAL) ---
+# --- CSS PERSONALIZADO (CLEAN & PROFESIONAL SIN GLASSMORFISM) ---
 st.markdown("""
 <style>
     /* 1. FUENTE GLOBAL */
@@ -44,13 +44,12 @@ st.markdown("""
         font-family: 'Roboto', sans-serif;
     }
 
-    /* 2. ESTILO GLASSMORPHISM (Barra Lateral) */
+    /* 2. ESTILO BARRA LATERAL (CORREGIDO Y SÓLIDO) */
     [data-testid="stSidebar"] {
-        background: rgba(14, 17, 23, 0.8);
-        box-shadow: 0 0 15px rgba(0, 191, 255, 0.1);
-        backdrop-filter: blur(3px);
-        -webkit-backdrop-filter: blur(3px);
-        border-right: 1px solid rgba(0, 191, 255, 0.2);
+        /* Usamos el secondaryBackgroundColor definido en config.toml para asegurar legibilidad */
+        background-color: #1E222A; 
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5); /* Sombra sutil y profesional */
+        /* Eliminado: backdrop-filter, border y otros estilos de Glassmorphism */
     }
 
     /* 3. ESTILO PARA LAS TARJETAS METRIC (st.metric) */
@@ -277,6 +276,7 @@ def show_typing_game():
         if 'comprehension_answers' not in st.session_state:
             st.session_state.comprehension_answers = [None] * len(PREGUNTAS_COMPRENSION)
 
+        # Muestra las preguntas
         for i, item in enumerate(PREGUNTAS_COMPRENSION):
             selected_answer = st.radio(
                 f"**Pregunta {i+1}:** {item['pregunta']}",
@@ -349,7 +349,7 @@ def show_typing_game():
             st.rerun()
 
 
-# --- MÓDULOS DE RANKING (FUNCIONES RESTAURADAS) ---
+# --- MÓDULOS DE RANKING ---
 
 def show_typing_ranking():
     """Módulo: Ranking de la Prueba de Velocidad."""
