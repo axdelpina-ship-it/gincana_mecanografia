@@ -6,6 +6,49 @@ import re
 import gspread
 from google.oauth2 import service_account 
 
+# --- CSS PERSONALIZADO para Glassmorphism y Estilo General ---
+st.markdown("""
+<style>
+    /* 1. ESTILO GLASSMORPHISM para la BARRA LATERAL (Menú de Módulos) */
+    [data-testid="stSidebar"] {
+        background: rgba(255, 255, 255, 0.1);
+        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+        backdrop-filter: blur(5px);
+        -webkit-backdrop-filter: blur(5px);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+    }
+    
+    /* 2. ESTILO para las tarjetas Metric (Mejora de st.metric) */
+    [data-testid="stMetric"] {
+        background-color: #0E1117; /* Fondo oscuro Streamlit */
+        padding: 15px;
+        border-radius: 10px;
+        border-left: 5px solid #FFC72C; /* Borde de color dorado/naranja */
+        box-shadow: 2px 2px 8px rgba(0, 0, 0, 0.5);
+    }
+
+    [data-testid="stMetricLabel"] {
+        font-weight: bold;
+        color: #B0B7C0; /* Color de label estándar */
+    }
+
+    [data-testid="stMetricValue"] {
+        font-size: 1.5em;
+        color: #FFFFFF; /* Valor en blanco */
+    }
+
+    /* 3. Estilo para el área de selección en la barra lateral (radio) */
+    .stRadio > label {
+        color: #E0E0E0;
+    }
+    .stRadio [role="radiogroup"] > label:hover {
+        background-color: rgba(255, 255, 255, 0.05);
+        border-radius: 5px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+
 # --- CONFIGURACIÓN Y CONEXIÓN A GOOGLE SHEETS ---
 
 @st.cache_resource
