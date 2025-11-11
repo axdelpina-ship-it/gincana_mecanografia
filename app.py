@@ -23,7 +23,7 @@ st.markdown("""
         background-color: #0E1117; /* Fondo oscuro Streamlit */
         padding: 15px;
         border-radius: 10px;
-        border-left: 5px solid #FFC72C; /* Borde de color dorado/naranja */
+        border-left: 5px solid #00BFFF; /* Color Azul/Cyan llamativo */
         box-shadow: 2px 2px 8px rgba(0, 0, 0, 0.5);
     }
 
@@ -45,6 +45,31 @@ st.markdown("""
         background-color: rgba(255, 255, 255, 0.05);
         border-radius: 5px;
     }
+
+    /* 4. ESTILO DEL TÍTULO GLOBAL (Neón/Glow) */
+    .global-title {
+        font-size: 3em; 
+        font-weight: 900; 
+        letter-spacing: 3px; 
+        
+        /* Degradado Azul/Púrpura vibrante */
+        background: linear-gradient(90deg, #6A5ACD, #00BFFF); 
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        display: inline-block; 
+        padding-bottom: 10px;
+        
+        /* Sombra por defecto */
+        text-shadow: 0 0 5px rgba(106, 90, 205, 0.5), 0 0 10px rgba(0, 191, 255, 0.5);
+        transition: text-shadow 0.3s ease-in-out; /* Transición suave */
+    }
+    
+    /* 5. HOVER EFFECT (Efecto de brillo neón al pasar el mouse) */
+    .global-title:hover {
+        text-shadow: 0 0 10px #6A5ACD, 0 0 20px #00BFFF, 0 0 30px #6A5ACD;
+        cursor: pointer; /* Indicar que es interactivo */
+    }
+    
 </style>
 """, unsafe_allow_html=True)
 
@@ -388,22 +413,11 @@ def show_fcr_ranking(worksheet_name):
 def show_fcr_global_ranking():
     """Consolida datos de todos los turnos, calcula el TOP 10 global y muestra las métricas."""
     
-    # ⭐ ESTILO VISUAL MEJORADO: Título con sombra y degradado
+    # ⭐ TÍTULO ESTILIZADO CON CLASE CSS .global-title
     st.markdown("""
-        <h1 style='
-            font-size: 3em; 
-            font-weight: 900; 
-            letter-spacing: 2px; 
-            color: #FFD700; /* Fallback */
-            text-shadow: 3px 3px 6px rgba(0,0,0,0.5); 
-            background: linear-gradient(90deg, #FFC72C, #FFA700); 
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            display: inline-block; 
-            padding-bottom: 10px;
-        '>
+        <div class='global-title'>
         👑 TOP 10 GLOBAL FCR/CSAT
-        </h1>
+        </div>
     """, unsafe_allow_html=True)
     
     st.markdown("---")
