@@ -668,8 +668,8 @@ if gsheet_client:
 else:
     st.error("❌ Fallo en la conexión a Google Sheets. Los resultados no se podrán guardar ni los rankings se cargarán. Revisa tus Secrets (gsheet_id y credenciales).")
 
-# Inicialización de estado global (Máquina de estados)
-if 'current_phase' not in st.session_state: reiniciar_test(False) # No usar st.rerun en la inicialización
+# Inicialización de estado global (Máquina de estados) - CORREGIDO
+if 'current_phase' not in st.session_state: reiniciar_test() 
 
 # --- BARRA DE NAVEGACIÓN LATERAL ---
 
@@ -689,6 +689,7 @@ current_module = menu_options[selection]
 # Botón de Reinicio Global en la Barra Lateral
 st.sidebar.markdown("---")
 if st.sidebar.button("🚨 Reiniciar Test (En cualquier momento)"):
+    # Llama a la función de reinicio, que ya incluye st.rerun()
     reiniciar_test()
 
 
