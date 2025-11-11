@@ -168,7 +168,7 @@ def save_typing_results(results_dict):
             results_dict['Duracion Tecleo (s)'],
             results_dict['Duracion Lectura (s)'],
             results_dict['RPM'],
-            results_dict['Respuestas Correctas'], # Aquí se guarda la métrica de Comprensión
+            results_dict['Respuestas Correctas'], 
             results_dict['Texto Escrito']
         ]
         
@@ -194,7 +194,7 @@ def reiniciar_test():
     st.session_state.results = None
 
 
-# --- MÓDULOS DE NAVEGACIÓN ---
+# --- MÓDULOS DE NAVEGACIÓN (FLUJO PRINCIPAL) ---
 
 def show_typing_game():
     """Módulo principal: La interfaz de la Gincana de Mecanografía en 4 fases."""
@@ -277,7 +277,6 @@ def show_typing_game():
         if 'comprehension_answers' not in st.session_state:
             st.session_state.comprehension_answers = [None] * len(PREGUNTAS_COMPRENSION)
 
-        # Muestra las preguntas
         for i, item in enumerate(PREGUNTAS_COMPRENSION):
             selected_answer = st.radio(
                 f"**Pregunta {i+1}:** {item['pregunta']}",
@@ -350,33 +349,249 @@ def show_typing_game():
             st.rerun()
 
 
+# --- MÓDULOS DE RANKING (FUNCIONES RESTAURADAS) ---
+
 def show_typing_ranking():
-    # El código de los Rankings debe ir aquí y usar la conexión a Google Sheets.
-    # Se omite para no repetir el código extenso, pero DEBES INCLUIRLO.
+    """Módulo: Ranking de la Prueba de Velocidad."""
     st.header("🏆 Ranking de Velocidad (WPM)")
-    st.warning("El código para cargar el ranking de Google Sheets debe ser pegado aquí.")
-    pass 
+    st.markdown("---")
     
+    client = get_gsheet_client()
+    if not client:
+        st.error("No se pudo conectar a Google Sheets para el ranking.")
+        return
+
+    try:
+        sheet = client.open_by_key(st.secrets["gsheet_id"]) 
+        results_ws = sheet.worksheet("Resultados Brutos")
+        
+        data = results_ws.get_all_records()
+        df = pd.DataFrame(data)
+
+        if df.empty:
+            st.info("Aún no hay resultados de la gincana para mostrar.")
+            return
+
+        df['WPM'] = pd.to_numeric(df['WPM'], errors='coerce')
+        idx = df.groupby(['ID Agente'])['WPM'].transform(max) == df['WPM']
+        ranking_consolidado = df[idx].sort_values(by='WPM', ascending=False)
+        
+        st.subheader("Mejores Resultados Históricos")
+        st.dataframe(ranking_consolidado[['ID Agente', 'WPM', 'Precisión (%)', 'Fecha/Hora']], hide_index=True)
+
+        st.markdown("---")
+        st.subheader("TOP 3")
+        
+        top3 = ranking_consolidado.head(3).reset_index(drop=True)
+        if not top3.empty:
+            st.metric("🥇 Primer Lugar", f"{top3.loc[0, 'ID Agente']}", f"{top3.loc[0, 'WPM']} WPM")
+        if len(top3) > 1:
+            st.metric("🥈 Segundo Lugar", f"{top3.loc[1, 'ID Agente']}", f"{top3.loc[1, 'WPM']} WPM")
+        if len(top3) > 2:
+            st.metric("🥉 Tercer Lugar", f"{top3.loc[2, 'ID Agente']}", f"{top3.loc[2, 'WPM']} WPM")
+
+    except Exception as e:
+        st.error(f"❌ Error al generar el ranking: {e}. ¿Están las columnas correctas en 'Resultados Brutos'?")
+
+
 def show_fcr_ranking(worksheet_name):
+    """Módulo: Ranking Semanal de FCR, dinámico con medallas y barra de progreso."""
     st.header(f"📈 Ranking FCR Semanal: {worksheet_name.replace('Ranking FCR Semanal - ', '')}")
-    st.warning("El código para cargar el ranking de FCR semanal debe ser pegado aquí.")
-    pass
+    st.markdown("---")
+    
+    client = get_gsheet_client()
+    if not client:
+        st.error("❌ No se pudo conectar a Google Sheets. Revisa tu configuración de Secrets.")
+        return
+
+    try:
+        sheet = client.open_by_key(st.secrets["gsheet_id"]) 
+        results_ws = sheet.worksheet(worksheet_name)
+        
+        data = results_ws.get_all_records()
+        df = pd.DataFrame(data)
+
+        if df.empty:
+            st.info(f"📊 Aún no hay datos en la pestaña '{worksheet_name}'.")
+            return
+
+        df['% +'] = df['% +'].astype(str).str.replace('%', '').str.replace(',', '.').astype(float)
+        
+        df = df.sort_values(by='Ranking', ascending=True).reset_index(drop=True)
+
+        st.subheader("🏆 TOP 3 Semanal")
+        top3 = df.head(3)
+        
+        col1, col2, col3 = st.columns(3)
+        
+        if not top3.empty:
+            col1.metric("🥇 1er Lugar", f"{top3.loc[0, 'Empleado']}", f"{top3.loc[0, '% +']:.2f}%")
+        if len(top3) > 1:
+            col2.metric("🥈 2do Lugar", f"{top3.loc[1, 'Empleado']}", f"{top3.loc[1, '% +']:.2f}%")
+        if len(top3) > 2:
+            col3.metric("🥉 3er Lugar", f"{top3.loc[2, 'Empleado']}", f"{top3.loc[2, '% +']:.2f}%")
+
+        st.markdown("---")
+        st.subheader("Tabla de Posiciones y Progreso")
+
+        max_percentage = df['% +'].max()
+        if max_percentage == 0:
+            max_percentage = 1 
+
+        st.dataframe(
+            df[['Ranking', 'Empleado', 'Chats', 'Cantidad +', '% +']],
+            column_config={
+                "% +": st.column_config.ProgressColumn(
+                    "Progreso FCR",
+                    help="Proximidad al mejor porcentaje de FCR/CSAT Positivo",
+                    format="%.2f%%",
+                    min_value=0,
+                    max_value=max_percentage,
+                ),
+                "Empleado": st.column_config.TextColumn("Agente"),
+                "Cantidad +": st.column_config.NumberColumn("CSAT Positivo", format="%d")
+            },
+            hide_index=True
+        )
+
+    except gspread.WorksheetNotFound:
+        st.error(f"❌ La hoja de cálculo NO tiene una pestaña llamada '{worksheet_name}'.")
+    except Exception as e:
+        st.error(f"❌ Error al generar el Ranking FCR. ¿Están las columnas correctas?: {e}")
+
 
 def show_fcr_global_ranking():
+    """Consolida datos de todos los turnos, calcula el TOP 10 global y muestra las métricas."""
+    
     st.header("👑 TOP 10 Global FCR/CSAT") 
-    st.warning("El código para cargar el ranking de FCR global debe ser pegado aquí.")
-    pass
+    st.markdown("---")
+    
+    client = get_gsheet_client()
+    if not client:
+        st.error("❌ No se pudo conectar a Google Sheets para el ranking global.")
+        return
+
+    fcr_sheets = {
+        "PM": "Ranking FCR Semanal - PM",
+        "AM": "Ranking FCR Semanal - AM",
+        "NT1": "Ranking FCR Semanal - NT1",
+        "NT2": "Ranking FCR Semanal - NT2",
+    }
+    
+    all_data = []
+    
+    for turno_key, sheet_name in fcr_sheets.items():
+        try:
+            sheet = client.open_by_key(st.secrets["gsheet_id"])
+            results_ws = sheet.worksheet(sheet_name)
+            
+            df_turno = pd.DataFrame(results_ws.get_all_records())
+            
+            if 'Total P+N' in df_turno.columns:
+                df_turno['Total P+N'] = pd.to_numeric(df_turno['Total P+N'], errors='coerce').fillna(0)
+            
+            if '% +' in df_turno.columns:
+                df_turno['% +'] = df_turno['% +'].astype(str).str.replace('%', '').str.replace(',', '.').astype(float)
+                
+            df_turno['Turno'] = turno_key
+            all_data.append(df_turno)
+            
+        except gspread.WorksheetNotFound:
+            st.warning(f"⚠️ Omisión: No se encontró la hoja '{sheet_name}'.")
+        except Exception as e:
+            st.error(f"❌ Error al procesar datos del turno {turno_key}: {e}")
+            
+    if not all_data:
+        st.info("No se pudo cargar la data de ningún turno.")
+        return
+
+    df_consolidado = pd.concat(all_data, ignore_index=True)
+    df_consolidado = df_consolidado.reset_index(drop=True) 
+    df_consolidado = df_consolidado.dropna(subset=['Empleado', 'Total P+N', '% +'])
+    
+    df_consolidado = df_consolidado.loc[df_consolidado.groupby('Empleado')['Total P+N'].idxmax()]
+    
+    df_consolidado = df_consolidado.sort_values(
+        by=['Total P+N', '% +'], 
+        ascending=[False, False]
+    ).reset_index(drop=True)
+
+    df_top10 = df_consolidado.head(10).copy()
+    
+    if df_top10.empty:
+        st.info("No hay suficientes datos para generar el TOP 10.")
+        return
+
+    st.subheader("🥇 Los Héroes de la Semana")
+    
+    global_leader = df_top10.iloc[0]
+    high_pct_leader = df_top10.loc[df_top10['% +'].idxmax()]
+    
+    col_trophy, col_msg = st.columns([1, 4])
+    
+    with col_trophy:
+        st.markdown(f"## 🏆")
+        st.markdown(f"## 👑")
+    
+    with col_msg:
+        st.info(
+            f"**¡Felicidades, {global_leader['Empleado']}!** se corona como el operador global con el **mayor volumen de satisfacción** ({global_leader['Total P+N']:.0f} Total P+N)."
+        )
+        st.success(
+            f"**{high_pct_leader['Empleado']}** destaca con el **porcentaje positivo más alto** del top ({high_pct_leader['% +']:.2f}%)."
+        )
+        
+        desempate_count = df_consolidado['Total P+N'].duplicated(keep='first').sum()
+        if desempate_count > 0:
+            st.warning(
+                f"**Nota Importante:** Los desempates en 'Total P+N' fueron resueltos utilizando el criterio secundario del porcentaje positivo (**% +**)."
+            )
+
+    st.markdown("---")
+    
+    st.subheader("Tabla Consolidada (TOP 10)")
+    
+    max_pn_value = df_top10['Total P+N'].max()
+    if max_pn_value == 0: max_pn_value = 1
+
+    st.dataframe(
+        df_top10[[
+            'Empleado', 
+            'Turno', 
+            'Total P+N', 
+            '% +', 
+            'Chats', 
+            'Cantidad +'
+        ]].reset_index(drop=True).assign(Rank=lambda x: x.index + 1),
+        column_order=('Rank', 'Empleado', 'Turno', 'Total P+N', '% +', 'Chats', 'Cantidad +'),
+        column_config={
+            "Total P+N": st.column_config.ProgressColumn(
+                "Total P+N (Volumen)",
+                help="Volumen total de satisfacción (P+N)",
+                format="%d",
+                min_value=0,
+                max_value=max_pn_value,
+            ),
+            "% +": st.column_config.NumberColumn(
+                "Porcentaje Positivo",
+                format="%.2f%%",
+            ),
+            "Turno": st.column_config.TextColumn("Turno"),
+            "Rank": st.column_config.NumberColumn("Posición", format="%d")
+        },
+        hide_index=True
+    )
+
 
 # --- FUNCIÓN PRINCIPAL DE LA APP ---
 
 st.set_page_config(page_title="Plataforma de Productividad", layout="wide")
 st.title("🎯 Plataforma de Productividad del Contact Center")
 
-# Chequeo de conexión (solo informativo)
 if gsheet_client:
-    st.success("✅ Conexión a Google Sheets exitosa (Solo para guardar resultados).")
+    st.success("✅ Conexión a Google Sheets exitosa (Solo para guardar resultados y rankings).")
 else:
-    st.error("❌ Fallo en la conexión a Google Sheets. Los resultados no se podrán guardar. Revisa tus Secrets.")
+    st.error("❌ Fallo en la conexión a Google Sheets. Los resultados no se podrán guardar ni los rankings se cargarán. Revisa tus Secrets.")
 
 # Inicialización de estado global (Máquina de estados)
 if 'current_phase' not in st.session_state: reiniciar_test()
@@ -404,7 +619,6 @@ elif current_module == "typing_ranking":
     show_typing_ranking()
 
 elif current_module == "fcr_ranking":
-    # Lógica de selección de turno (requiere el código de show_fcr_ranking)
     st.sidebar.markdown("---")
     st.sidebar.subheader("Seleccionar Turno FCR")
     fcr_sheets = {
