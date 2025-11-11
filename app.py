@@ -345,19 +345,21 @@ def show_fcr_ranking(worksheet_name):
 def show_fcr_global_ranking():
     """Consolida datos de todos los turnos, calcula el TOP 10 global y muestra las métricas."""
     
-    # ESTILO VISUAL: Título con sombra y degradado
+    # ⭐ ESTILO VISUAL MEJORADO: Título con sombra y degradado
     st.markdown("""
         <h1 style='
-            font-size: 2.5em; 
-            font-weight: bold; 
-            color: #FFD700; 
-            text-shadow: 2px 2px 4px #000000;
-            background: linear-gradient(90deg, #FFD700, #FFC72C);
+            font-size: 3em; 
+            font-weight: 900; 
+            letter-spacing: 2px; 
+            color: #FFD700; /* Fallback */
+            text-shadow: 3px 3px 6px rgba(0,0,0,0.5); 
+            background: linear-gradient(90deg, #FFC72C, #FFA700); 
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            display: inline;
+            display: inline-block; 
+            padding-bottom: 10px;
         '>
-        👑 TOP 10 Global FCR/CSAT
+        👑 TOP 10 GLOBAL FCR/CSAT
         </h1>
     """, unsafe_allow_html=True)
     
@@ -408,7 +410,7 @@ def show_fcr_global_ranking():
     # Consolidar todos los DataFrames
     df_consolidado = pd.concat(all_data, ignore_index=True)
     
-    # 🚨 CORRECCIÓN CRÍTICA: Reiniciar el índice para resolver el KeyError en .loc[idxmax()]
+    # ✅ CORRECCIÓN DEL KEYERROR: Reiniciar el índice
     df_consolidado = df_consolidado.reset_index(drop=True) 
     
     # Asegurar que solo tenemos una entrada por empleado (el mejor resultado)
