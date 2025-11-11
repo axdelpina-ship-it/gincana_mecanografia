@@ -137,6 +137,10 @@ def show_typing_game():
                 st.session_state.saving = False
                 st.session_state.texto_escrito = "" 
                 st.session_state.guardado_exitoso = False
+                
+                # 🎉 EFECTO VISUAL: Nieve al iniciar
+                st.snow()
+                
                 st.rerun()
 
     elif st.session_state.started and not st.session_state.finished:
@@ -192,6 +196,10 @@ def show_typing_game():
         }
         
         st.subheader("📊 Tus Resultados")
+        
+        # 🎉 EFECTO VISUAL: Globos al terminar
+        st.balloons()
+        
         col1, col2, col3 = st.columns(3)
         col1.metric("Velocidad (WPM)", f"{st.session_state.results['WPM']:.2f}")
         col2.metric("Precisión", f"{st.session_state.results['Precisión (%)']:.2f}%")
@@ -336,7 +344,23 @@ def show_fcr_ranking(worksheet_name):
 
 def show_fcr_global_ranking():
     """Consolida datos de todos los turnos, calcula el TOP 10 global y muestra las métricas."""
-    st.header("👑 TOP 10 Global FCR/CSAT")
+    
+    # ESTILO VISUAL: Título con sombra y degradado
+    st.markdown("""
+        <h1 style='
+            font-size: 2.5em; 
+            font-weight: bold; 
+            color: #FFD700; 
+            text-shadow: 2px 2px 4px #000000;
+            background: linear-gradient(90deg, #FFD700, #FFC72C);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: inline;
+        '>
+        👑 TOP 10 Global FCR/CSAT
+        </h1>
+    """, unsafe_allow_html=True)
+    
     st.markdown("---")
     
     client = get_gsheet_client()
@@ -410,7 +434,6 @@ def show_fcr_global_ranking():
     
     st.subheader("🥇 Los Héroes de la Semana")
     
-    # Encontrar líder en Total P+N y en % +
     global_leader = df_top10.iloc[0]
     high_pct_leader = df_top10.loc[df_top10['% +'].idxmax()]
     
@@ -421,7 +444,7 @@ def show_fcr_global_ranking():
         st.markdown(f"## 👑")
     
     with col_msg:
-        # 5. Generar Notas Importantes (Felicitar y Desempate)
+        # Mensajes de felicitación
         st.info(
             f"**¡Felicidades, {global_leader['Empleado']}!** se corona como el operador global con el **mayor volumen de satisfacción** ({global_leader['Total P+N']:.0f} Total P+N)."
         )
@@ -475,6 +498,7 @@ def show_fcr_global_ranking():
 
 # --- FUNCIÓN PRINCIPAL DE LA APP ---
 
+# Configuración de página con layout extendido
 st.set_page_config(page_title="Gincana Contact Center", layout="wide")
 st.title("🎯 Plataforma de Productividad del Contact Center")
 
