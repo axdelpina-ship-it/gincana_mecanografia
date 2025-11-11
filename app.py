@@ -230,6 +230,7 @@ def show_typing_game():
             # Finaliza la cuenta, inicia el cronómetro de lectura y pasa a la fase activa
             st.session_state.current_phase = "READING_ACTIVE"
             st.session_state.start_time = time.time() # INICIO DEL CRONÓMETRO DE LECTURA
+            st.session_state.update_count = 0 # Contador para el refresco del cronómetro
             st.rerun()
 
 
@@ -264,29 +265,31 @@ def show_typing_game():
 
 
     # ----------------------------------------
-    # FASE 2B: LECTURA DEL TEXTO (CRONÓMETRO ACTIVO Y VISIBLE)
+    # FASE 2B: LECTURA DEL TEXTO (CRONÓMETRO ACTIVO Y VOLUNTARIO)
     # ----------------------------------------
     elif st.session_state.current_phase == "READING_ACTIVE":
         st.subheader("📚 Paso 1: Lee el siguiente texto con atención")
+        st.info("📢 **IMPORTANTE:** Cuando termines de leer y creas haber entendido el texto, presiona el botón para detener el cronómetro y pasar a la prueba de tecleo.")
         
         # Muestra el texto legible
         st.markdown(f'<div class="typing-text">{TEXTO_PRUEBA_GINCANA}</div>', unsafe_allow_html=True)
 
         tiempo_placeholder = st.empty()
         
-        # Verifica si el tiempo de inicio existe para el cálculo del tiempo transcurrido
-        if st.session_state.start_time:
-            tiempo_transcurrido = time.time() - st.session_state.start_time
-            tiempo_placeholder.info(f"⏰ Tiempo de lectura transcurrido: **{int(tiempo_transcurrido)}** segundos.")
-            
-            # Refresca cada 1 segundo para mostrar el tiempo
-            time.sleep(1)
+        # CRONÓMETRO DE LECTURA DE BAJA FRECUENCIA (Para no bloquear el botón)
+        tiempo_transcurrido = time.time() - st.session_state.start_time
+        tiempo_placeholder.info(f"⏰ Tiempo de lectura transcurrido: **{int(tiempo_transcurrido)}** segundos.")
+        
+        # Pequeño bucle que solo se ejecuta unas pocas veces para dar feedback inicial sin ser intrusivo
+        # Opcional: Se puede quitar el siguiente bloque si se desea que el cronómetro solo se capture al presionar.
+        if st.session_state.update_count < 15: # Refresca por ~7.5 segundos (15 * 0.5s)
+            st.session_state.update_count += 1
+            time.sleep(0.5)
             st.rerun()
-        else:
-            tiempo_placeholder.info("⏰ Tiempo de lectura: 0 segundos.")
 
 
         if st.button("Terminé de leer y Continúar a la Prueba de Tecleo ➡️"):
+            # Captura el tiempo final al presionar
             if st.session_state.start_time:
                 st.session_state.reading_time = time.time() - st.session_state.start_time
             else:
@@ -323,6 +326,7 @@ def show_typing_game():
         
         st.session_state.texto_escrito = texto_escrito 
 
+        # Bucle de refresco del cronómetro de tecleo
         if tiempo_restante > 0 and tiempo_restante <= DURACION_SEGUNDOS:
             time.sleep(1)
             st.rerun() 
@@ -668,7 +672,7 @@ if gsheet_client:
 else:
     st.error("❌ Fallo en la conexión a Google Sheets. Los resultados no se podrán guardar ni los rankings se cargarán. Revisa tus Secrets (gsheet_id y credenciales).")
 
-# Inicialización de estado global (Máquina de estados) - CORREGIDO
+# Inicialización de estado global (Máquina de estados)
 if 'current_phase' not in st.session_state: reiniciar_test() 
 
 # --- BARRA DE NAVEGACIÓN LATERAL ---
@@ -689,7 +693,6 @@ current_module = menu_options[selection]
 # Botón de Reinicio Global en la Barra Lateral
 st.sidebar.markdown("---")
 if st.sidebar.button("🚨 Reiniciar Test (En cualquier momento)"):
-    # Llama a la función de reinicio, que ya incluye st.rerun()
     reiniciar_test()
 
 
