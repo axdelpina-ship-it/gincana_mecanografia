@@ -203,6 +203,7 @@ def reiniciar_test():
     st.session_state.guardado_exitoso = False
     st.session_state.comprehension_answers = [None] * len(PREGUNTAS_COMPRENSION)
     st.session_state.results = None
+    if 'progress_value' in st.session_state: del st.session_state['progress_value'] # Limpia la distracción
     st.rerun() # Fuerza el reinicio de la aplicación
 
 
@@ -281,14 +282,13 @@ def show_typing_game():
         tiempo_placeholder.info(f"⏰ Tiempo de lectura transcurrido: **{int(tiempo_transcurrido)}** segundos.")
         
         # Pequeño bucle que solo se ejecuta unas pocas veces para dar feedback inicial sin ser intrusivo
-        # Opcional: Se puede quitar el siguiente bloque si se desea que el cronómetro solo se capture al presionar.
         if st.session_state.update_count < 15: # Refresca por ~7.5 segundos (15 * 0.5s)
             st.session_state.update_count += 1
             time.sleep(0.5)
             st.rerun()
 
 
-        if st.button("Terminé de leer y Continúar a la Prueba de Tecleo ➡️"):
+        if st.button("Terminé de leer y Continuar a la Prueba de Tecleo ➡️"):
             # Captura el tiempo final al presionar
             if st.session_state.start_time:
                 st.session_state.reading_time = time.time() - st.session_state.start_time
@@ -300,8 +300,9 @@ def show_typing_game():
             st.snow()
             st.rerun()
 
+
     # ----------------------------------------
-    # FASE 3: TECLEO (JUEGO)
+    # FASE 3: TECLEO (JUEGO CON DISTRACCIÓN)
     # ----------------------------------------
     elif st.session_state.current_phase == "TYPING":
         
@@ -310,6 +311,17 @@ def show_typing_game():
         
         st.subheader(f"📝 Paso 2: ¡Teclea ahora, {st.session_state.agente_id}!")
         timer_placeholder = st.empty()
+        
+        # --- DISTRACCIÓN (BARRA DE PROGRESO "GUSANITO") ---
+        if 'progress_value' not in st.session_state:
+            st.session_state.progress_value = 0.05
+        
+        # Modifica el valor en cada ciclo para que parezca que "se mueve" y nunca llega a 100% o 0%
+        # Simula un proceso constante y molesto
+        st.session_state.progress_value = (st.session_state.progress_value + 0.01) % 0.9 + 0.05
+        st.progress(st.session_state.progress_value, text="**🚨 Atención:** Proceso interno en ejecución... ¡Concéntrate! 🚨")
+        st.markdown("---")
+        # ----------------------------------------------------
         
         if tiempo_restante > 0:
             timer_placeholder.warning(f"⏳ Tiempo restante: **{int(tiempo_restante)}** segundos.")
@@ -326,7 +338,7 @@ def show_typing_game():
         
         st.session_state.texto_escrito = texto_escrito 
 
-        # Bucle de refresco del cronómetro de tecleo
+        # Bucle de refresco del cronómetro de tecleo y distracción
         if tiempo_restante > 0 and tiempo_restante <= DURACION_SEGUNDOS:
             time.sleep(1)
             st.rerun() 
